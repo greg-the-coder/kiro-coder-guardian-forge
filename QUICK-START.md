@@ -19,8 +19,18 @@ Get up and running with Coder Guardian Forge in 5 minutes.
 Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-export CODER_URL="https://coder.mycompany.com"  # Your Coder server (no trailing slash)
-export CODER_TOKEN="<your-token-here>"           # Token from Coder UI
+export CODER_URL="https://coder.mycompany.com/"  # Your Coder server URL (with trailing slash)
+export CODER_TOKEN="<your-token-here>"            # Token from Coder UI
+```
+
+**Note:** If you're running Kiro inside a Coder workspace, `CODER_URL` is already set with a trailing slash. You only need to set `CODER_TOKEN`:
+```bash
+export CODER_TOKEN="<your-token-here>"
+```
+
+Reload your shell:
+```bash
+source ~/.zshrc  # or ~/.bashrc
 ```
 
 Reload your shell:
@@ -158,13 +168,18 @@ The work is complete
 
 Check:
 ```bash
-echo $CODER_URL      # Should show your Coder server URL
+echo $CODER_URL      # Should show your Coder server URL (with trailing slash)
 echo $CODER_TOKEN    # Should show your token
+```
+
+If `CODER_URL` is missing the trailing slash, add it:
+```bash
+export CODER_URL="${CODER_URL}/"
 ```
 
 Verify token works:
 ```bash
-curl -H "Authorization: Bearer $CODER_TOKEN" $CODER_URL/api/v2/users/me
+curl -H "Authorization: Bearer $CODER_TOKEN" ${CODER_URL}api/v2/users/me
 ```
 
 ### "No templates available"

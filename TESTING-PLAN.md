@@ -22,9 +22,11 @@ Before starting testing, ensure you have:
 
 4. **Environment variables set**
    ```bash
-   export CODER_URL="https://coder.mycompany.com"  # Your Coder server (no trailing slash)
-   export CODER_TOKEN="<your-token-here>"           # Token from step 2
+   export CODER_URL="https://coder.mycompany.com/"  # Your Coder server URL (with trailing slash)
+   export CODER_TOKEN="<your-token-here>"            # Token from step 2
    ```
+
+   **Note:** If running Kiro inside a Coder workspace, `CODER_URL` is already set with a trailing slash. You only need to set `CODER_TOKEN`.
 
 5. **Kiro installed and running**
    - Verify Kiro can access environment variables
@@ -83,7 +85,7 @@ Before starting testing, ensure you have:
 **Troubleshooting if connection fails:**
 - Verify `CODER_URL` is set: `echo $CODER_URL`
 - Verify `CODER_TOKEN` is set: `echo $CODER_TOKEN`
-- Check URL format: no trailing slash, includes `https://`
+- Check URL format: includes `https://` or `http://`
 - Test token manually: `curl -H "Authorization: Bearer $CODER_TOKEN" $CODER_URL/api/v2/users/me`
 - Confirm admin enabled `mcp-server-http` experiment
 

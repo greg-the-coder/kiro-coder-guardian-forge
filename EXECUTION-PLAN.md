@@ -52,9 +52,16 @@ Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
 # Coder Guardian Forge Configuration
-export CODER_URL="https://your-coder-server.com"  # Replace with your Coder server URL (no trailing slash)
-export CODER_TOKEN="<paste-your-token-here>"       # Replace with token from Step 1.2
+export CODER_URL="https://your-coder-server.com/"  # Your Coder server URL (with trailing slash)
+export CODER_TOKEN="<paste-your-token-here>"        # Token from Step 1.2
 ```
+
+**Note:** If you're running Kiro inside a Coder workspace, `CODER_URL` is already injected with a trailing slash. You only need to set `CODER_TOKEN`:
+```bash
+export CODER_TOKEN="<paste-your-token-here>"
+```
+
+**Why the trailing slash matters:** The mcp.json configuration is designed to work with Coder's standard `CODER_URL` format, which includes a trailing slash. This ensures compatibility when Kiro is running inside a Coder workspace.
 
 **Apply changes:**
 ```bash
@@ -133,6 +140,7 @@ Connected to Coder as <your-username> at <your-coder-url>. Ready to create agent
 - Check environment variables are set
 - Verify token is valid
 - Confirm MCP HTTP experiment is enabled
+- **Check for trailing slash:** If `CODER_URL` doesn't end with `/`, add it: `export CODER_URL="${CODER_URL}/"`
 - Review troubleshooting in QUICK-START.md
 
 ### Step 2.3: Verify Templates Listed
@@ -638,8 +646,12 @@ Once testing is complete and successful:
 
 **Start testing:**
 ```bash
-# Set environment variables
-export CODER_URL="https://your-coder-server.com"
+# Set environment variables (with trailing slash)
+export CODER_URL="https://your-coder-server.com/"  # With trailing slash
+export CODER_TOKEN="<your-token>"
+
+# Or if CODER_URL is already set without trailing slash:
+export CODER_URL="${CODER_URL}/"  # Adds trailing slash
 export CODER_TOKEN="<your-token>"
 
 # Verify
@@ -647,7 +659,7 @@ echo $CODER_URL
 echo $CODER_TOKEN
 
 # Test token
-curl -H "Authorization: Bearer $CODER_TOKEN" $CODER_URL/api/v2/users/me
+curl -H "Authorization: Bearer $CODER_TOKEN" ${CODER_URL}api/v2/users/me
 ```
 
 **Install power:**

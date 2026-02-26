@@ -63,8 +63,18 @@ CODER_EXPERIMENTS="oauth2,mcp-server-http" coder server
 Add these to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 
 ```bash
-export CODER_URL="https://coder.mycompany.com"  # Your Coder server URL (no trailing slash)
-export CODER_TOKEN="<paste-your-token-here>"     # Token from Step 1
+export CODER_URL="https://coder.mycompany.com/"  # Your Coder server URL (with trailing slash)
+export CODER_TOKEN="<paste-your-token-here>"      # Token from Step 1
+```
+
+**Note:** If you're running Kiro inside a Coder workspace, `CODER_URL` is already injected into your environment with a trailing slash. You only need to set `CODER_TOKEN`:
+```bash
+export CODER_TOKEN="<paste-your-token-here>"
+```
+
+Then reload your shell:
+```bash
+source ~/.zshrc  # or ~/.bashrc
 ```
 
 Then reload your shell:
@@ -81,7 +91,7 @@ Connected to Coder as <username> at <server-url>. Ready to create agent tasks.
 ```
 
 If the connection fails, check:
-- `CODER_URL` is set correctly and points to your Coder server (no trailing slash)
+- `CODER_URL` is set correctly and points to your Coder server
 - `CODER_TOKEN` is set to a valid token from the Coder web UI
 - Your Coder admin has enabled the `mcp-server-http` experiment on the server
 
@@ -156,7 +166,7 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 **Solutions:**
 1. Verify `CODER_URL` is set: `echo $CODER_URL`
 2. Verify `CODER_TOKEN` is set: `echo $CODER_TOKEN` (should show token)
-3. Check URL format: no trailing slash, includes `https://`
+3. Check URL format: includes `https://` or `http://`
 4. Test token in browser: visit `${CODER_URL}/api/v2/users/me` with token in Authorization header
 5. Confirm admin enabled `mcp-server-http` experiment on server
 
@@ -167,6 +177,20 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 2. Update `CODER_TOKEN` in your shell profile
 3. Reload shell: `source ~/.zshrc`
 4. Restart Kiro to pick up new environment variables
+
+**Problem:** "Invalid URL" or "404 Not Found"
+
+**Cause:** `CODER_URL` may be missing the trailing slash
+
+**Solutions:**
+1. Check your `CODER_URL`: `echo $CODER_URL`
+2. If it doesn't end with `/`, add it:
+   ```bash
+   export CODER_URL="${CODER_URL}/"
+   ```
+3. Add this to your shell profile to make it permanent
+4. Reload shell: `source ~/.zshrc`
+5. Restart Kiro
 
 ### Task Creation Issues
 

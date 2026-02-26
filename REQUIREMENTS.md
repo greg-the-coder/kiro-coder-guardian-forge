@@ -41,7 +41,7 @@ Authentication uses a standard `Authorization: Bearer <token>` header with the d
 {
   "mcpServers": {
     "coder": {
-      "url": "${CODER_URL}/api/experimental/mcp/http",
+      "url": "${CODER_URL}api/experimental/mcp/http",
       "headers": {
         "Authorization": "Bearer ${CODER_TOKEN}"
       }
@@ -50,11 +50,13 @@ Authentication uses a standard `Authorization: Bearer <token>` header with the d
 }
 ```
 
+**Note:** The URL assumes `CODER_URL` includes a trailing slash (e.g., `https://coder.mycompany.com/`), which is the standard format injected by Coder workspaces.
+
 **Environment variables the developer must set** (once, in their shell profile):
 
 | Variable | Description | Example |
 |---|---|---|
-| `CODER_URL` | Base URL of the Coder deployment | `https://coder.mycompany.com` |
+| `CODER_URL` | Base URL of the Coder deployment (with trailing slash) | `https://coder.mycompany.com/` |
 | `CODER_TOKEN` | Coder personal API token from the web UI | `<token from Account → Tokens>` |
 
 Kiro expands `${VAR}` references at runtime, so credentials are never hardcoded in the file and `mcp.json` is safe to commit to the repository.
@@ -98,7 +100,7 @@ The onboarding section runs once when the Power is first activated. It should:
    - Call `coder_get_authenticated_user` via the remote MCP server
    - If it succeeds, display: `"Connected to Coder as <username> at <server-url>. Ready to create agent tasks."`
    - If it fails, tell the user to check:
-     - `CODER_URL` is set correctly and points to their Coder server (no trailing slash)
+     - `CODER_URL` is set correctly and points to their Coder server
      - `CODER_TOKEN` is set to a valid token from **Coder web UI → Account → Tokens**
      - The Coder admin has enabled the `mcp-server-http` experiment on the server
    - Do not proceed with any Coder operations if this check fails
@@ -293,9 +295,11 @@ The prototype is working when a developer can complete this full loop in Kiro, w
 
 **Step 2 — Set two environment variables** in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 ```bash
-export CODER_URL="https://coder.mycompany.com"
+export CODER_URL="https://coder.mycompany.com/"
 export CODER_TOKEN="<paste-token-here>"
 ```
+
+**Note:** If running Kiro inside a Coder workspace, `CODER_URL` is already set with a trailing slash.
 
 **Step 3 — Install the Power in Kiro**
 - Open the Powers panel → Add power from GitHub → paste the repo URL
