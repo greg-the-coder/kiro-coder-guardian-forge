@@ -8,12 +8,15 @@ Your step-by-step plan to complete and unit test the Coder Guardian Forge Power 
 
 You now have a complete prototype of the Coder Guardian Forge Power with:
 - ✅ Core power files (mcp.json, POWER.md)
-- ✅ Steering files (task-workflow.md, workspace-ops.md)
+- ✅ Steering files (task-workflow.md, workspace-ops.md, agent-interaction.md)
+- ✅ Agent collaboration capabilities (coder_send_task_input, coder_get_task_logs)
 - ✅ Comprehensive testing plan
 - ✅ Quick start guide
 - ✅ Documentation
 
-**Next:** Execute the testing plan to validate everything works.
+**Next:** Execute the testing plan to validate everything works, including the new agent interaction features.
+
+**New in this version:** Phase 6 includes comprehensive tests for agent-to-agent collaboration, covering all four collaboration patterns (Orchestrator, Delegator, Hybrid, Iterative).
 
 ---
 
@@ -454,9 +457,506 @@ This is the primary acceptance test from REQUIREMENTS.md.
 
 ---
 
-## Phase 6: Comprehensive Testing (Optional, 60+ minutes)
+## Phase 6: Agent Interaction Tests (45 minutes)
 
-For thorough validation, follow the complete testing plan:
+These tests validate the new agent collaboration capabilities using `coder_send_task_input` and `coder_get_task_logs`.
+
+### Test 6.1: Verify Agent Interaction Steering File
+
+**Load the steering file:**
+```
+Load the agent-interaction steering file
+```
+
+**Expected:**
+- Kiro loads `steering/agent-interaction.md`
+- Kiro confirms understanding of agent collaboration patterns
+
+**Verify understanding:**
+```
+What are the four agent collaboration patterns?
+```
+
+**Expected response should mention:**
+1. Orchestrator pattern
+2. Delegator pattern
+3. Hybrid pattern
+4. Iterative pattern
+
+**Checklist:**
+- [ ] Steering file loads successfully
+- [ ] Kiro understands collaboration patterns
+- [ ] Four patterns explained correctly
+
+### Test 6.2: Basic Prompt Sending (Delegator Pattern)
+
+**Create a task with a workspace agent:**
+```
+Create a Coder task for testing agent interaction
+```
+
+**Wait for workspace to be running**
+
+**Send a simple prompt to the workspace agent:**
+```
+Send this prompt to the workspace agent: "Create a file at /home/coder/agent-test.txt with the content 'Hello from workspace agent'"
+```
+
+**Expected:**
+- Kiro calls `coder_send_task_input`
+- Prompt is delivered to workspace agent
+- Kiro monitors task state
+
+**Monitor progress:**
+```
+What's the current task state?
+```
+
+**Expected:**
+- Kiro calls `coder_get_task_status`
+- Shows current state (working, idle, or failure)
+- Displays state message if available
+
+**Check logs for agent response:**
+```
+Show me the task logs
+```
+
+**Expected:**
+- Kiro calls `coder_get_task_logs`
+- Logs show agent activity
+- Can see if agent processed the prompt
+
+**Verify the result:**
+```
+Read the file /home/coder/agent-test.txt
+```
+
+**Expected:**
+- File exists (if workspace agent processed the prompt)
+- Content matches what was requested
+
+**Checklist:**
+- [ ] Prompt sent successfully
+- [ ] Task state monitored
+- [ ] Logs retrieved and displayed
+- [ ] Agent activity visible in logs
+
+### Test 6.3: Orchestrator Pattern
+
+**Create a new task:**
+```
+Create a Coder task for orchestrator pattern testing
+```
+
+**Wait for running, then set up structure yourself:**
+```
+Create a directory at /home/coder/project
+Create a file at /home/coder/project/README.md with content "# Test Project"
+```
+
+**Now delegate implementation to workspace agent:**
+```
+Send this prompt to the workspace agent: "In the /home/coder/project directory, create a simple Python script called hello.py that prints 'Hello, World!'"
+```
+
+**Monitor until idle:**
+```
+Monitor the task state until the workspace agent is idle
+```
+
+**Expected:**
+- Kiro polls `coder_get_task_status` periodically
+- Waits for state to change from "working" to "idle"
+- Reports when agent completes
+
+**Verify the work:**
+```
+Read the file /home/coder/project/hello.py
+```
+
+**Run the script yourself:**
+```
+Run 'python3 /home/coder/project/hello.py' in the workspace
+```
+
+**Expected:**
+- File exists and contains Python code
+- Script runs and prints "Hello, World!"
+
+**Checklist:**
+- [ ] External agent set up structure
+- [ ] Prompt delegated to workspace agent
+- [ ] Monitoring worked correctly
+- [ ] Workspace agent completed task
+- [ ] Results verified
+
+### Test 6.4: Iterative Pattern
+
+**Create a new task:**
+```
+Create a Coder task for iterative pattern testing
+```
+
+**Wait for running, then send initial prompt:**
+```
+Send this prompt to the workspace agent: "Create a simple HTML file at /home/coder/form.html with a basic contact form (name and email fields)"
+```
+
+**Wait for completion:**
+```
+Monitor task state until idle
+```
+
+**Review the initial work:**
+```
+Read the file /home/coder/form.html
+```
+
+**Send refinement prompt:**
+```
+Send this prompt to the workspace agent: "Add a phone number field and a submit button to the form"
+```
+
+**Wait for completion:**
+```
+Monitor task state until idle
+```
+
+**Review the refined work:**
+```
+Read the file /home/coder/form.html again
+```
+
+**Expected:**
+- Form now has phone field and submit button
+- Previous fields (name, email) still present
+
+**Send final refinement:**
+```
+Send this prompt to the workspace agent: "Add basic CSS styling to make the form look better"
+```
+
+**Wait and verify:**
+```
+Monitor task state until idle
+Read the file /home/coder/form.html one more time
+```
+
+**Expected:**
+- CSS styling added
+- Form is improved iteratively
+
+**Checklist:**
+- [ ] Initial prompt created basic form
+- [ ] First refinement added fields
+- [ ] Second refinement added styling
+- [ ] Iterative improvements worked
+
+### Test 6.5: Hybrid Pattern
+
+**Create a new task:**
+```
+Create a Coder task for hybrid pattern testing
+```
+
+**Wait for running, then start parallel work:**
+
+**You (external agent) - Set up infrastructure:**
+```
+Create a file at /home/coder/Dockerfile with this content:
+FROM python:3.11-slim
+WORKDIR /app
+COPY . .
+CMD ["python", "app.py"]
+```
+
+**Workspace agent - Implement application:**
+```
+Send this prompt to the workspace agent: "Create a simple Python Flask app at /home/coder/app.py with a single route that returns 'Hello from Flask!'"
+```
+
+**While workspace agent works, you continue with infrastructure:**
+```
+Create a file at /home/coder/requirements.txt with content "flask==3.0.0"
+```
+
+**Monitor workspace agent:**
+```
+What's the task state?
+```
+
+**When idle, verify both parts:**
+```
+Read /home/coder/app.py
+Read /home/coder/Dockerfile
+Read /home/coder/requirements.txt
+```
+
+**Expected:**
+- Infrastructure files created by you
+- Application created by workspace agent
+- Both parts work together
+
+**Checklist:**
+- [ ] External agent created infrastructure
+- [ ] Workspace agent created application
+- [ ] Parallel work completed
+- [ ] Integration successful
+
+### Test 6.6: Information Gathering
+
+**Create a new task:**
+```
+Create a Coder task for information gathering
+```
+
+**Wait for running, then create some test files:**
+```
+Create a file at /home/coder/test1.py with content "print('test1')"
+Create a file at /home/coder/test2.py with content "print('test2')"
+Create a directory at /home/coder/src
+Create a file at /home/coder/src/main.py with content "print('main')"
+```
+
+**Ask workspace agent for information:**
+```
+Send this prompt to the workspace agent: "List all Python files in /home/coder and its subdirectories, and tell me what each one does"
+```
+
+**Wait for response:**
+```
+Monitor task state until idle
+```
+
+**Check logs for agent's response:**
+```
+Show me the task logs
+```
+
+**Expected:**
+- Logs contain agent's analysis
+- Agent identified all Python files
+- Agent described what each file does
+
+**Checklist:**
+- [ ] Prompt sent successfully
+- [ ] Workspace agent analyzed files
+- [ ] Response visible in logs
+- [ ] Information extracted successfully
+
+### Test 6.7: Error Handling in Agent Interaction
+
+**Create a new task:**
+```
+Create a Coder task for error handling testing
+```
+
+**Wait for running, then send a prompt that will cause an error:**
+```
+Send this prompt to the workspace agent: "Install a package called 'nonexistent-package-xyz-123' using pip"
+```
+
+**Monitor the task:**
+```
+Monitor task state
+```
+
+**Expected:**
+- Task state may show "failure" or "idle" with error
+- Workspace agent reports the error
+
+**Check logs:**
+```
+Show me the task logs
+```
+
+**Expected:**
+- Logs show error message
+- Error indicates package not found
+
+**Send corrective prompt:**
+```
+Send this prompt to the workspace agent: "That's okay, the package doesn't exist. Just create a simple text file at /home/coder/recovery.txt with content 'Recovered from error'"
+```
+
+**Verify recovery:**
+```
+Monitor task state until idle
+Read /home/coder/recovery.txt
+```
+
+**Expected:**
+- Workspace agent recovered
+- File created successfully
+
+**Checklist:**
+- [ ] Error detected in task state
+- [ ] Error visible in logs
+- [ ] Corrective prompt sent
+- [ ] Recovery successful
+
+### Test 6.8: Monitoring and Log Parsing
+
+**Create a new task:**
+```
+Create a Coder task for monitoring testing
+```
+
+**Wait for running, then send a long-running prompt:**
+```
+Send this prompt to the workspace agent: "Create 5 text files named file1.txt through file5.txt, each with different content. Take your time and report progress."
+```
+
+**Monitor with polling:**
+```
+Check task state every 30 seconds until idle
+```
+
+**Expected:**
+- Kiro polls periodically
+- State changes from "working" to "idle"
+- Kiro reports when complete
+
+**Check logs multiple times:**
+```
+Show me the task logs
+```
+
+**Wait 10 seconds, then:**
+```
+Show me the task logs again
+```
+
+**Expected:**
+- Logs grow over time
+- Can see agent progress
+- New log entries appear
+
+**Verify all files created:**
+```
+List the contents of /home/coder
+```
+
+**Expected:**
+- All 5 files exist
+
+**Checklist:**
+- [ ] Monitoring loop worked
+- [ ] State changes detected
+- [ ] Logs updated over time
+- [ ] Progress visible
+
+### Test 6.9: Complete Agent Interaction Workflow
+
+**Full end-to-end test of agent collaboration:**
+
+1. **Create task:**
+   ```
+   Create a Coder task for a complete agent collaboration test
+   ```
+
+2. **Wait for running**
+
+3. **Set up project structure (you):**
+   ```
+   Create a directory at /home/coder/webapp
+   Create a file at /home/coder/webapp/README.md with content "# Web Application"
+   ```
+
+4. **Delegate implementation (workspace agent):**
+   ```
+   Send this prompt to the workspace agent: "In /home/coder/webapp, create a simple web application with an index.html file that has a form for user registration (name, email, password fields) and basic CSS styling"
+   ```
+
+5. **Monitor progress:**
+   ```
+   Monitor task state until idle
+   ```
+
+6. **Review work:**
+   ```
+   Read /home/coder/webapp/index.html
+   ```
+
+7. **Provide feedback:**
+   ```
+   Send this prompt to the workspace agent: "Add form validation - email should be required and password should be at least 8 characters"
+   ```
+
+8. **Monitor again:**
+   ```
+   Monitor task state until idle
+   ```
+
+9. **Verify improvements:**
+   ```
+   Read /home/coder/webapp/index.html
+   ```
+
+10. **Add infrastructure (you):**
+    ```
+    Create a file at /home/coder/webapp/server.py with a simple HTTP server
+    ```
+
+11. **Complete and stop:**
+    ```
+    The work is complete. Stop the workspace.
+    ```
+
+**Expected:**
+- Complete workflow executes smoothly
+- External and workspace agents collaborate effectively
+- All files created correctly
+- Workspace stops cleanly
+
+**Checklist:**
+- [ ] Task created
+- [ ] Structure set up by external agent
+- [ ] Implementation delegated to workspace agent
+- [ ] Monitoring worked
+- [ ] Feedback incorporated
+- [ ] Infrastructure added by external agent
+- [ ] Workspace stopped
+
+### Test 6.10: Quick Reference Validation
+
+**Verify the quick reference guide is accurate:**
+
+```
+Show me the agent interaction quick reference
+```
+
+**Or manually review:**
+```bash
+cat kiro-coder-guardian-forge/AGENT-INTERACTION-QUICK-REF.md
+```
+
+**Verify:**
+- [ ] Tool syntax matches actual usage
+- [ ] Patterns match what you tested
+- [ ] Examples are accurate
+- [ ] Troubleshooting tips are helpful
+
+**Test a workflow from the quick reference:**
+
+Pick one workflow example from the quick reference and execute it exactly as documented.
+
+**Expected:**
+- Workflow works as documented
+- No errors or confusion
+- Results match expectations
+
+**Checklist:**
+- [ ] Quick reference reviewed
+- [ ] Workflow example tested
+- [ ] Documentation is accurate
+
+---
+
+## Phase 7: Comprehensive Testing (Optional, 60+ minutes)
+
+For thorough validation beyond agent interaction, follow the complete testing plan:
 
 **Reference:** `TESTING-PLAN.md`
 
@@ -467,9 +967,10 @@ For thorough validation, follow the complete testing plan:
 4. ✓ Progress Reporting (completed in Phase 3 above)
 5. ✓ Task Completion (completed in Phase 3 above)
 6. ✓ Advanced Scenarios (completed in Phase 4 above)
-7. Error Handling (additional tests in TESTING-PLAN.md)
-8. ✓ End-to-End (completed in Phase 5 above)
-9. Documentation and Cleanup
+7. ✓ Agent Interaction (completed in Phase 6 above)
+8. Error Handling (additional tests in TESTING-PLAN.md)
+9. ✓ End-to-End (completed in Phase 5 above)
+10. Documentation and Cleanup
 
 **Follow TESTING-PLAN.md for:**
 - Additional error handling tests
@@ -479,9 +980,9 @@ For thorough validation, follow the complete testing plan:
 
 ---
 
-## Phase 7: Documentation and Cleanup (15 minutes)
+## Phase 8: Documentation and Cleanup (15 minutes)
 
-### Step 7.1: Document Test Results
+### Step 8.1: Document Test Results
 
 Create a test results file:
 ```bash
@@ -514,6 +1015,9 @@ cat > kiro-coder-guardian-forge/TEST-RESULTS.md << 'EOF'
 ### Phase 5: Acceptance Test
 - [ ] Acceptance test passed
 
+### Phase 6: Agent Interaction Tests
+- [ ] All agent interaction tests passed
+
 ## Issues Found
 
 1. Issue description
@@ -533,7 +1037,7 @@ EOF
 
 Fill in the results based on your testing.
 
-### Step 7.2: Clean Up Test Resources
+### Step 8.2: Clean Up Test Resources
 
 List all test tasks:
 ```
@@ -550,7 +1054,7 @@ Or manually in Coder UI:
 2. Stop any running test workspaces
 3. Delete test tasks
 
-### Step 7.3: Review Documentation
+### Step 8.3: Review Documentation
 
 Quick review checklist:
 - [ ] POWER.md is accurate
@@ -564,8 +1068,9 @@ Quick review checklist:
 
 The prototype is complete and ready when:
 
-✅ **All Phase 1-5 tests pass**
+✅ **All Phase 1-6 tests pass**
 ✅ **Acceptance test (Phase 5) passes without errors**
+✅ **Agent interaction tests (Phase 6) pass without errors**
 ✅ **Documentation is accurate**
 ✅ **Test results are documented**
 ✅ **Test resources are cleaned up**
@@ -581,11 +1086,13 @@ The prototype is complete and ready when:
 | Phase 3: Basic Functionality | 20 min | 45 min |
 | Phase 4: Advanced Tests | 30 min | 75 min |
 | Phase 5: Acceptance Test | 15 min | 90 min |
-| Phase 6: Comprehensive (optional) | 60 min | 150 min |
-| Phase 7: Documentation | 15 min | 105 min (or 165 min) |
+| Phase 6: Agent Interaction Tests | 45 min | 135 min |
+| Phase 7: Comprehensive (optional) | 60 min | 195 min |
+| Phase 8: Documentation | 15 min | 150 min (or 210 min) |
 
-**Minimum viable testing:** 90 minutes (Phases 1-5, 7)
-**Comprehensive testing:** 165 minutes (all phases)
+**Minimum viable testing:** 90 minutes (Phases 1-5, 8)
+**With agent interaction:** 150 minutes (Phases 1-6, 8)
+**Comprehensive testing:** 210 minutes (all phases)
 
 ---
 
@@ -681,6 +1188,24 @@ I want to create a Coder task to test the workspace
 The work is complete
 ```
 
+**Test agent interaction:**
+```
+# Load agent interaction steering
+Load the agent-interaction steering file
+
+# Send prompt to workspace agent
+Send this prompt to the workspace agent: "Create a file at /home/coder/test.txt"
+
+# Monitor task state
+What's the current task state?
+
+# Check logs
+Show me the task logs
+
+# Monitor until complete
+Monitor task state until idle
+```
+
 ---
 
 ## Checklist
@@ -713,6 +1238,19 @@ Use this checklist to track your progress:
 - [ ] Background processes work
 - [ ] Errors handled gracefully
 - [ ] Task failure works
+
+### Agent Interaction Tests
+- [ ] Steering file loads
+- [ ] Prompts sent to workspace agent
+- [ ] Task state monitored
+- [ ] Logs retrieved and parsed
+- [ ] Orchestrator pattern works
+- [ ] Delegator pattern works
+- [ ] Hybrid pattern works
+- [ ] Iterative pattern works
+- [ ] Information gathering works
+- [ ] Error handling works
+- [ ] Complete workflow passes
 
 ### Acceptance Test
 - [ ] Complete end-to-end workflow passed
