@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-02-26 - Template-Based Configuration (v2.0.0)
+
+### Breaking Changes
+- **Removed `mcp.json` from power** - Configuration is now template-based
+- **Changed authentication method** - Now uses `CODER_SESSION_TOKEN` instead of personal API tokens
+- **Configuration approach changed** - From environment variables to template-based generation
+
+### Added
+- **Template-based automatic configuration** - Zero-config setup for developers
+- **`setup.sh` script** - Automatic MCP configuration for manual setup
+- **`coder-template-example.tf`** - Complete Terraform example for admins
+- **`MCP-STABILITY-NOTES.md`** - Comprehensive stability and troubleshooting guide
+- **`RECOMMENDED-SOLUTION.md`** - Architecture decisions and implementation details
+- **`IMPLEMENTATION-SUMMARY.md`** - Quick reference for the new approach
+- **Session token authentication** - Uses `CODER_SESSION_TOKEN` for better security and rate limits
+
+### Changed
+- **POWER.md** - Complete rewrite of onboarding section with template-based approach
+- **POWER.md** - Updated MCP Server Configuration section
+- **POWER.md** - Revised troubleshooting section for new configuration method
+- **README.md** - Updated with template-based quick start instructions
+- **Authentication** - Switched from personal API tokens to session tokens
+
+### Fixed
+- **Environment variable expansion issue** - Kiro doesn't support `${VAR}` in mcp.json
+- **Rate limiting (429 errors)** - Session tokens have higher rate limits than personal tokens
+- **URL construction issues** - Proper handling of trailing slashes in CODER_URL
+- **Configuration reliability** - Template-based approach ensures consistent setup across workspaces
+
+### Removed
+- **`mcp.json`** - No longer included in power (configuration is template-based)
+- **Personal API token requirement** - No longer needed for authentication
+- **Manual environment variable setup** - Replaced with automatic configuration
+
+### Benefits
+- ✅ Zero configuration for developers (with template approach)
+- ✅ Higher rate limits (session tokens vs personal tokens)
+- ✅ Better security (auto-rotated session tokens)
+- ✅ Easier maintenance (centralized template configuration)
+- ✅ More reliable (no environment variable expansion issues)
+- ✅ Scalable (works for all developers automatically)
+
+### Migration Guide
+
+**For Coder Administrators:**
+1. Add the startup script from `coder-template-example.tf` to your workspace templates
+2. Developers will get automatic configuration on next workspace start
+3. No action needed from developers
+
+**For Developers (if admin hasn't updated template):**
+1. Run: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+2. Restart Kiro
+3. Verify "coder" MCP server is connected in MCP Servers panel
+
+**Backward Compatibility:** Existing configurations continue to work. The new approach is additive.
+
+---
+
 ## 2026-02-26 - Agent Interaction Enhancements
 
 ### New Capabilities

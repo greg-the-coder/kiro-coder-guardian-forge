@@ -41,66 +41,125 @@ Call action "readSteering" to access specific workflows as needed.
 
 ### Prerequisites
 
-**Developer requirements:**
-- Access to a Coder deployment with the `mcp-server-http` experiment enabled
-- A Coder personal API token (from Coder web UI → Account → Tokens)
-- At least one workspace template configured by your Coder admin
+**For Coder Administrators:**
+- Coder server must be started with the `mcp-server-http` experiment enabled:
+  ```bash
+  CODER_EXPERIMENTS="oauth2,mcp-server-http" coder server
+  ```
+- At least one workspace template configured
 
-**Coder admin prerequisite (one-time):**
-The Coder server must be started with the MCP HTTP experiment enabled:
-```bash
-CODER_EXPERIMENTS="oauth2,mcp-server-http" coder server
+**For Developers:**
+- Access to a Coder workspace (the power works inside Coder workspaces)
+- No manual configuration needed if admin has set up the template (see below)
+
+### Setup Options
+
+#### Option A: Automatic Setup (Recommended for Admins)
+
+**For Coder administrators:** Add automatic MCP configuration to your workspace templates so developers get zero-configuration setup.
+
+Add this to your Coder workspace template's agent startup script:
+
+```hcl
+resource "coder_agent" "dev" {
+  # ... your existing agent config ...
+  
+  startup_script = <<-EOT
+    #!/bin/bash
+    
+    # Your existing startup commands...
+    
+    # ============================================
+    # Kiro Coder Guardian Forge MCP Configuration
+    # ============================================
+    
+    echo "🔧 Configuring Kiro MCP for Coder..."
+    
+    # Create Kiro settings directory
+    mkdir -p ~/.kiro/settings
+    
+    # Create MCP configuration with environment variables
+    cat > ~/.kiro/settings/mcp.json << 'MCPEOF'
+{
+  "mcpServers": {
+    "coder": {
+      "url": "$${CODER_URL}api/experimental/mcp/http",
+      "headers": {
+        "Authorization": "Bearer $${CODER_SESSION_TOKEN}"
+      },
+      "autoApprove": [
+        "coder_workspace_edit_file",
+        "coder_workspace_read_file",
+        "coder_get_task_status",
+        "coder_workspace_write_file",
+        "coder_workspace_ls",
+        "coder_workspace_bash",
+        "coder_get_task_logs",
+        "coder_list_templates",
+        "coder_create_task"
+      ]
+    }
+  }
+}
+MCPEOF
+    
+    # Substitute actual environment variable values
+    sed -i "s|\$${CODER_URL}|$${CODER_URL}|g" ~/.kiro/settings/mcp.json
+    sed -i "s|\$${CODER_SESSION_TOKEN}|$${CODER_SESSION_TOKEN}|g" ~/.kiro/settings/mcp.json
+    
+    echo "✅ Kiro MCP configuration created at ~/.kiro/settings/mcp.json"
+    
+    # Your remaining startup commands...
+  EOT
+}
 ```
 
-### Setup
+**See `coder-template-example.tf` in this power for a complete example.**
 
-**Step 1: Get your Coder API token**
-1. Log into your Coder web UI
-2. Navigate to **Account → Tokens**
-3. Click **Generate Token**
-4. Copy the token value
+**Benefits:**
+- ✅ Zero configuration for developers
+- ✅ Works automatically in every workspace
+- ✅ Uses secure session tokens (no personal API tokens needed)
+- ✅ Credentials never committed to version control
+- ✅ Automatically updated when workspace restarts
 
-**Step 2: Set environment variables**
+#### Option B: Manual Setup (For Developers)
 
-Add these to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+If your Coder admin hasn't configured automatic setup, you can configure manually:
+
+**Step 1: Run the setup script**
+
+This power includes a setup script that automatically configures the MCP server:
 
 ```bash
-export CODER_URL="https://coder.mycompany.com"   # Your Coder server URL
-export CODER_TOKEN="<paste-your-token-here>"     # Token from Step 1
+bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 ```
 
-**Note:** If you're running Kiro inside a Coder workspace, `CODER_URL` is already injected into your environment. You only need to set `CODER_TOKEN`:
-```bash
-export CODER_TOKEN="<paste-your-token-here>"
-```
+The script will:
+- Detect your Coder workspace environment
+- Create the MCP configuration using `CODER_SESSION_TOKEN`
+- Configure auto-approval for common tools
 
-Then reload your shell:
-```bash
-source ~/.zshrc  # or ~/.bashrc
-```
+**Step 2: Restart Kiro**
+
+After running the setup script, restart Kiro to connect to the Coder MCP server:
+- Reload the Kiro window, or
+- Restart the Kiro process
 
 **Step 3: Verify connection**
 
-After installing this Power, I will automatically verify the connection by calling `coder_get_authenticated_user`. If successful, you'll see:
+Check the MCP Servers panel in Kiro - you should see the "coder" server connected.
 
-```
-Connected to Coder as <username> at <server-url>. Ready to create agent tasks.
-```
+Test the connection by calling `coder_get_authenticated_user` to verify you're authenticated.
 
-If the connection fails, check:
-- `CODER_URL` is set correctly and points to your Coder server
-- `CODER_TOKEN` is set to a valid token from the Coder web UI
-- Your Coder admin has enabled the `mcp-server-http` experiment on the server
+### Why Session Tokens?
 
-**Step 4: Check available templates**
+This power uses `CODER_SESSION_TOKEN` (automatically available in Coder workspaces) instead of personal API tokens because:
 
-I will list available workspace templates using `coder_list_templates`. If no templates are found, ask your Coder admin to configure at least one workspace template before tasks can be created.
-
-**Step 5: Create task completion hook**
-
-I will create a hook at `.kiro/hooks/coder-task-complete.kiro.hook` that you can trigger when work is complete. This hook will:
-- Report the task as `idle` in the Coder Tasks UI with a summary
-- Stop the workspace to free up resources
+- ✅ **Higher rate limits** - No 429 errors during normal use
+- ✅ **Automatically managed** - Rotated by Coder, no manual token generation
+- ✅ **Secure** - Scoped to the current user session
+- ✅ **Zero configuration** - Already injected into workspace environment
 
 ## MCP Server Configuration
 
@@ -109,14 +168,21 @@ This Power connects to Coder's remote HTTP MCP server at:
 ${CODER_URL}/api/experimental/mcp/http
 ```
 
-Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. Kiro expands the `${VAR}` references at runtime, so credentials are never hardcoded and `mcp.json` is safe to commit.
+**Configuration is template-based** - the MCP server configuration is created automatically when your workspace starts (if your admin has configured the template) or via the `setup.sh` script.
 
-**Why remote over local CLI:**
+**Why remote HTTP MCP server:**
 - No Coder CLI installation required
 - No `coder login` or local session management
-- Works on any machine where Kiro runs
+- Works seamlessly inside Coder workspaces
 - Token-based auth is explicit and auditable
-- Tokens can be scoped, rotated, or revoked from the Coder web UI
+- Session tokens are automatically rotated by Coder
+
+**Configuration file location:**
+```
+~/.kiro/settings/mcp.json
+```
+
+This file is created automatically and contains your actual Coder URL and session token. It should not be committed to version control.
 
 ## Key Coder MCP Tools
 
@@ -170,19 +236,36 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 **Problem:** "Failed to connect to Coder MCP server"
 
 **Solutions:**
-1. Verify `CODER_URL` is set: `echo $CODER_URL`
-2. Verify `CODER_TOKEN` is set: `echo $CODER_TOKEN` (should show token)
-3. Check URL format: includes `https://` or `http://`
-4. Test token in browser: visit `${CODER_URL}/api/v2/users/me` with token in Authorization header
+1. Verify you're running inside a Coder workspace: `echo $CODER_URL`
+2. Check session token is available: `echo ${CODER_SESSION_TOKEN:0:10}...`
+3. Run the setup script: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+4. Restart Kiro to reconnect
 5. Confirm admin enabled `mcp-server-http` experiment on server
 
 **Problem:** "Unauthorized" or "Invalid token"
 
 **Solutions:**
-1. Generate a new token from Coder web UI → Account → Tokens
-2. Update `CODER_TOKEN` in your shell profile
-3. Reload shell: `source ~/.zshrc`
-4. Restart Kiro to pick up new environment variables
+1. Session token may have expired - restart your workspace
+2. Run setup script again to get fresh token: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+3. Restart Kiro to pick up new configuration
+
+**Problem:** MCP server not listed in Kiro
+
+**Solutions:**
+1. Check if config file exists: `cat ~/.kiro/settings/mcp.json`
+2. If missing, run setup script: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+3. Verify config has actual values (not `${VAR}` placeholders)
+4. Restart Kiro to load the configuration
+
+**Problem:** Rate limiting (429 errors)
+
+**Cause:** Too many connection attempts in a short time
+
+**Solutions:**
+1. Wait 5-10 minutes for rate limit to reset
+2. Verify you're using session token (not personal API token)
+3. Check Coder server logs for rate limit configuration
+4. Contact Coder admin to increase MCP endpoint rate limits
 
 ### Task Creation Issues
 
@@ -222,15 +305,21 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 
 ## Configuration
 
-**No additional configuration required** after setting `CODER_URL` and `CODER_TOKEN` environment variables.
+**Template-based configuration (recommended):**
+- Add MCP config generation to your Coder workspace template
+- See `coder-template-example.tf` for implementation
+- Developers get automatic zero-configuration setup
 
-The Power works immediately once:
-1. Environment variables are set
-2. Coder admin has enabled `mcp-server-http` experiment
-3. At least one workspace template exists
+**Manual configuration (fallback):**
+- Run `setup.sh` script in the power directory
+- Configuration created at `~/.kiro/settings/mcp.json`
+- Restart Kiro to connect
+
+**No additional configuration required** after setup - the MCP server connects automatically when Kiro starts.
 
 ---
 
 **MCP Server:** coder (remote HTTP)
 **Endpoint:** `${CODER_URL}/api/experimental/mcp/http`
-**Authentication:** Bearer token via `${CODER_TOKEN}`
+**Authentication:** Bearer token via `CODER_SESSION_TOKEN`
+**Configuration:** Template-based (see `setup.sh` or `coder-template-example.tf`)
