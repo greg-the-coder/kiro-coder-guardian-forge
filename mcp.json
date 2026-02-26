@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "coder": {
+      "url": "${CODER_URL}/api/experimental/mcp/http",
+      "headers": {
+        "Authorization": "Bearer ${CODER_TOKEN}"
+      }
+    }
+  }
+}
