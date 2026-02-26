@@ -23,10 +23,11 @@ This Power uses Coder's remote HTTP MCP server, so there's no CLI to install. Ju
 
 ## Available Steering Files
 
-This power has two steering files for different workflows:
+This power has three steering files for different workflows:
 
 - **task-workflow** - Creating and monitoring Coder Tasks (load when starting new work)
 - **workspace-ops** - Running commands and editing files inside workspaces (load when doing actual work)
+- **agent-interaction** - Collaborating with AI agents inside task workspaces (load when delegating work to workspace agents)
 
 Call action "readSteering" to access specific workflows as needed.
 
@@ -34,6 +35,7 @@ Call action "readSteering" to access specific workflows as needed.
 
 - Creating a new task or starting work on something → `steering/task-workflow.md`
 - Running commands, reading or writing files inside a workspace → `steering/workspace-ops.md`
+- Sending prompts to or monitoring workspace agents (Claude Code, Cursor, etc.) → `steering/agent-interaction.md`
 
 ## Onboarding
 
@@ -129,11 +131,10 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 | `coder_list_templates` | Show available workspace templates |
 | `coder_list_template_version_parameters` | Show template configuration options |
 | `coder_create_task` | **Primary tool** — creates Coder Task with workspace |
-| `coder_get_task_status` | Poll until task workspace is running |
-| `coder_get_task_logs` | Get workspace name and connection details |
+| `coder_get_task_status` | Monitor task status (read-only, set by workspace agent) |
+| `coder_get_task_logs` | Get workspace logs including agent activity and responses |
 | `coder_list_tasks` | Find existing running tasks |
-| `coder_send_task_input` | Send follow-up prompts to a task |
-| `coder_report_task` | Report progress to Tasks UI |
+| `coder_send_task_input` | Send prompts/instructions to workspace agent (Claude Code, Cursor, etc.) |
 | `coder_delete_task` | Clean up completed tasks |
 | `coder_list_workspaces` | Look up workspace details |
 | `coder_workspace_bash` | Run commands inside workspace |
@@ -146,16 +147,26 @@ Authentication uses the standard `Authorization: Bearer ${CODER_TOKEN}` header. 
 | `coder_workspace_port_forward` | Access ports not exposed as apps |
 | `coder_create_workspace_build` | Stop workspace after completion |
 
+**Note:** Task state (working, idle, failure) is managed by the agent running inside the workspace, not externally. Use `coder_get_task_status` to monitor the current state.
+
+**Agent Interaction:** Use `coder_send_task_input` to send prompts to workspace agents (Claude Code, Cursor, etc.) and `coder_get_task_logs` to see their responses. This enables collaboration between external Kiro agents and workspace agents.
+
 ## Best Practices
 
 - Always create tasks with `coder_create_task`, never use `coder_create_workspace` directly
 - Wait for task workspace to be running before executing commands or file operations
-- Report progress frequently using `coder_report_task` with `state=working`
-- Keep progress summaries under 160 characters with no newlines
-- Always report completion with `state=idle` or `state=failure`
-- Stop workspaces after task completion or failure to free resources
+- Monitor task status with `coder_get_task_status` to track workspace agent progress
+- Use `coder_send_task_input` to delegate work to workspace agents (Claude Code, Cursor, etc.)
+- Check `coder_get_task_logs` to see workspace agent responses and activity
+- Always stop workspaces after work is complete to free resources
 - Use dedicated file tools instead of bash `cat`/`echo`/`heredoc`
 - Set appropriate timeouts for `coder_workspace_bash` based on operation type
+
+**Collaboration Patterns:**
+- **Orchestrator:** You coordinate, workspace agent implements specific tasks
+- **Delegator:** Send comprehensive prompt, workspace agent does most work
+- **Hybrid:** You handle infrastructure, workspace agent handles business logic
+- **Iterative:** You and workspace agent refine work together in iterations
 
 ## Troubleshooting
 

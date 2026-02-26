@@ -83,14 +83,14 @@ The workspace takes time to provision. You must wait until it's running before d
 
 **Timeout handling:**
 - If the task has not reached `running` status within 5 minutes, something is wrong
-- Call `coder_report_task` with `state=failure` and summary explaining the timeout
 - Stop polling and inform the user
+- Stop the workspace with `coder_create_workspace_build` to clean up
 
 **Once running:**
-1. Call `coder_report_task` with:
-   - `state=working`
-   - `summary="Workspace ready, starting work"`
-2. This updates the Tasks UI to show the agent is actively working
+- The workspace is ready for work
+- The task state will be managed by the agent inside the workspace (e.g., Claude Code)
+- You can now execute commands and perform file operations
+- Monitor task state by calling `coder_get_task_status` periodically
 
 ### Step 4: Get Workspace Connection Details
 
@@ -115,46 +115,28 @@ The workspace parameter for all workspace operations uses the format: `owner/wor
 
 ---
 
-## Reporting Progress During Work
+## Monitoring Task Progress
 
-As you work inside the task workspace, report progress frequently to keep the Coder Tasks UI updated.
+While working inside the task workspace, you can monitor the task state set by the workspace agent.
 
-**When to report:**
-- After completing each meaningful step
-- Before starting a long-running operation
-- After a long-running operation completes
-- When switching between different types of work
+**How to monitor:**
+Call `coder_get_task_status` periodically to check:
+- `status`: Overall task status (active, paused, stopped)
+- `state.state`: Current work state (working, idle, failure)
+- `state.message`: Description of current activity
+- `state.timestamp`: When state was last updated
 
-**How to report:**
-Call `coder_report_task` with:
-- `state=working` (indicates active work in progress)
-- `summary`: A clear, concise description of current progress
+**Note:** Task state is managed by the agent running inside the workspace (e.g., Claude Code, Cursor, etc.). External agents can only read the state, not update it.
 
-**Summary requirements:**
-- Maximum 160 characters
-- No newlines or special formatting
-- Clear and specific about what's happening
-- Written in present tense or present continuous
-
-**Good summary examples:**
-- `"Reading project structure in /home/coder/app"`
-- `"Implementing the auth handler in src/api/auth.go"`
-- `"Running tests — waiting for results"`
-- `"Installing dependencies with npm install"`
-- `"Building Docker image for deployment"`
-- `"Analyzing code for security vulnerabilities"`
-
-**Bad summary examples:**
-- `"Working"` (too vague)
-- `"Doing stuff in the workspace"` (not specific)
-- `"Step 1 complete\nStep 2 starting"` (contains newline)
-- `"I am currently in the process of implementing the authentication handler and will then proceed to write comprehensive unit tests"` (too long)
-
-**Example call:**
+**Example monitoring:**
 ```json
 {
-  "state": "working",
-  "summary": "Running go test ./... in /home/coder/app"
+  "status": "active",
+  "state": {
+    "state": "working",
+    "message": "Running tests in /home/coder/app",
+    "timestamp": "2026-02-26T18:30:00Z"
+  }
 }
 ```
 
@@ -165,72 +147,53 @@ Call `coder_report_task` with:
 When all work is done successfully, properly complete the task.
 
 **Actions:**
-1. Call `coder_report_task` with:
-   - `state=idle`
-   - `summary`: A clear summary of what was accomplished (under 160 characters)
-
-2. Ask the user if they want to stop the workspace or keep it running:
-   ```
-   Work complete. Would you like me to stop the workspace to free up resources, or keep it running for review?
-   ```
-
-3. If stopping (recommended):
+1. **Stop the workspace:**
    - Call `coder_create_workspace_build` with:
-     - `workspace`: The workspace name (format: `owner/workspace-name`)
+     - `workspace_id`: The workspace ID from task creation
      - `transition=stop`
-   - This gracefully stops the workspace
+   - This gracefully stops the workspace and frees resources
 
-4. Optional: If the task is completely done and won't be revisited:
-   - Call `coder_delete_task` to clean up the task entry
-   - Only do this if the user confirms they don't need the task history
+2. Inform the user that the work is complete and workspace is stopping
 
-**Completion summary examples:**
-- `"Implemented auth endpoints with tests — all passing"`
-- `"Fixed bug in payment processor — deployed to staging"`
-- `"Refactored database layer — 30% performance improvement"`
-- `"Added logging to error handlers — ready for review"`
+**CRITICAL:** Always stop the workspace when work is complete to avoid consuming unnecessary resources.
 
 **Example completion flow:**
 ```
-1. coder_report_task(state="idle", summary="API endpoints implemented and tested")
-2. Ask user about stopping workspace
-3. coder_create_workspace_build(workspace="alice/task-123", transition="stop")
+1. coder_create_workspace_build(workspace_id="...", transition="stop")
+2. Inform user: "Work complete. Workspace is stopping."
 ```
+
+**Note:** Task state (idle/complete) is managed by the agent inside the workspace. External monitoring can check `coder_get_task_status` to see the final state.
 
 ---
 
 ## Handling Task Failures
 
-If something goes wrong and the work cannot be completed, properly report the failure.
+If something goes wrong and the work cannot be completed, properly handle the failure.
 
-**When to report failure:**
+**When to handle failure:**
 - Workspace provisioning fails or times out
 - Critical errors that prevent work from continuing
 - User explicitly cancels the work
 - Unrecoverable errors in the workspace
 
 **Actions:**
-1. Call `coder_report_task` with:
-   - `state=failure`
-   - `summary`: A clear description of what went wrong (under 160 characters)
-
-2. Stop the workspace immediately:
-   - Call `coder_create_workspace_build` with `transition=stop`
+1. **Always stop the workspace:**
+   - Call `coder_create_workspace_build` with:
+     - `workspace_id`: The workspace ID
+     - `transition=stop`
    - **Do not leave workspaces running after a failure**
 
-3. Inform the user of the failure and what happened
+2. Inform the user of the failure and what happened
 
-**Failure summary examples:**
-- `"Workspace provisioning timed out after 5 minutes"`
-- `"Tests failed — 3 critical errors in auth module"`
-- `"Build failed — missing dependency: libssl-dev"`
-- `"Cannot connect to database — check credentials"`
+**CRITICAL:** Always stop the workspace after a failure to avoid consuming unnecessary resources.
+
+**Note:** Task state (failure/error) is managed by the agent inside the workspace. External monitoring can check `coder_get_task_status` to see the final state.
 
 **Example failure flow:**
 ```
-1. coder_report_task(state="failure", summary="Build failed — missing Go 1.21")
-2. coder_create_workspace_build(workspace="alice/task-123", transition="stop")
-3. Inform user of the failure
+1. coder_create_workspace_build(workspace_id="...", transition="stop")
+2. Inform user: "Work failed — [clear description]. Workspace is stopping."
 ```
 
 ---
@@ -263,21 +226,16 @@ Before creating a new task, check if there's already a running task for similar 
    ↓
 3. Wait for running (poll coder_get_task_status)
    ↓
-4. Report working (coder_report_task state=working)
+4. Get workspace name (coder_get_task_logs)
    ↓
-5. Get workspace name (coder_get_task_logs)
+5. Do work (see workspace-ops.md steering file)
    ↓
-6. Do work (see workspace-ops.md steering file)
+6. Monitor task state (coder_get_task_status shows state set by workspace agent)
    ↓
-7. Report progress frequently (coder_report_task state=working)
+7. When complete:
+   - Stop workspace (coder_create_workspace_build transition=stop)
    ↓
-8. Complete or fail:
-   - Success: coder_report_task state=idle
-   - Failure: coder_report_task state=failure
-   ↓
-9. Stop workspace (coder_create_workspace_build transition=stop)
-   ↓
-10. Optional: Delete task (coder_delete_task)
+8. Optional: Delete task (coder_delete_task)
 ```
 
 ---
@@ -291,9 +249,8 @@ For simple, short-lived work:
 1. Create task with clear description
 2. Wait for running
 3. Do the work quickly
-4. Report idle with summary
-5. Stop workspace immediately
-6. Delete task to keep task list clean
+4. Stop workspace immediately
+5. Delete task to keep task list clean
 ```
 
 ### Pattern: Long-Running Development Task
@@ -302,9 +259,9 @@ For extended development work:
 ```
 1. Create task with project description
 2. Wait for running
-3. Report progress at each major step
+3. Do the work (task state managed by workspace agent)
 4. Keep workspace running between work sessions
-5. When completely done, report idle and stop
+5. When completely done, stop workspace
 6. Keep task in history for reference
 ```
 
@@ -315,10 +272,9 @@ For processing multiple items:
 1. Create task describing the batch job
 2. Wait for running
 3. For each item:
-   - Report progress: "Processing item X of Y"
    - Do the work
-4. Report idle with summary of results
-5. Stop workspace
+   - Monitor progress via coder_get_task_status
+4. Stop workspace when complete
 ```
 
 ---
@@ -329,7 +285,7 @@ For processing multiple items:
 
 ```
 If coder_get_task_status shows "pending" or "starting" for > 5 minutes:
-1. coder_report_task(state="failure", summary="Provisioning timeout")
+1. coder_create_workspace_build(transition="stop")
 2. Inform user to check Coder server logs
 3. Do not proceed with work
 ```
@@ -340,20 +296,18 @@ If coder_get_task_status shows "pending" or "starting" for > 5 minutes:
 If workspace operations start failing:
 1. Call coder_get_task_status to check workspace state
 2. If stopped or failed:
-   - coder_report_task(state="failure", summary="Workspace connection lost")
-   - Inform user
+   - Inform user that workspace is no longer available
 3. If still running:
    - Retry the operation
-   - If still failing, report failure
+   - If still failing, stop workspace and inform user
 ```
 
 ### User Cancellation
 
 ```
 If user asks to cancel work:
-1. coder_report_task(state="failure", summary="Cancelled by user")
-2. coder_create_workspace_build(transition="stop")
-3. Confirm cancellation to user
+1. coder_create_workspace_build(transition="stop")
+2. Confirm cancellation to user
 ```
 
 ---
@@ -361,13 +315,13 @@ If user asks to cancel work:
 ## Best Practices
 
 - Always wait for `running` status before doing any workspace operations
-- Report progress every 1-2 minutes during long operations
-- Keep summaries clear, concise, and under 160 characters
+- Monitor task state by calling `coder_get_task_status` periodically
 - Always stop workspaces after completion or failure
 - Check for existing tasks before creating new ones
 - Use meaningful task descriptions that explain the work goal
 - Don't leave workspaces running unnecessarily — they consume resources
 - If unsure about workspace state, call `coder_get_task_status` to check
+- Task state (working/idle/failure) is managed by the workspace agent, not external agents
 
 ---
 

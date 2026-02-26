@@ -16,7 +16,8 @@ kiro-coder-guardian-forge/
 ├── mcp.json               ← Coder remote MCP server connection (no CLI needed)
 └── steering/
     ├── task-workflow.md   ← how to create and monitor Coder Tasks
-    └── workspace-ops.md   ← how to run commands inside the workspace
+    ├── workspace-ops.md   ← how to run commands inside the workspace
+    └── agent-interaction.md ← how to collaborate with workspace agents
 ```
 
 The Power connects Kiro to a running Coder deployment via the **Coder remote HTTP MCP server**. No Coder CLI installation or local `coder login` is required — the developer provides their Coder server URL and a personal API token, and the Power connects directly to Coder's MCP HTTP endpoint.
@@ -115,15 +116,15 @@ The onboarding section runs once when the Power is first activated. It should:
 ```json
 {
   "enabled": true,
-  "name": "Report Coder Task Complete",
-  "description": "When work is done, report the task as idle in the Coder Tasks UI and stop the workspace.",
+  "name": "Stop Coder Workspace",
+  "description": "When work is done, stop the workspace to free resources.",
   "version": "1",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "The current work is complete. Call coder_report_task with state=idle and a clear summary of what was accomplished. Then stop the workspace by calling coder_create_workspace_build with transition=stop."
+    "prompt": "The current work is complete. Stop the workspace by calling coder_create_workspace_build with transition=stop."
   }
 }
 ```
@@ -134,6 +135,7 @@ The onboarding section runs once when the Power is first activated. It should:
 # When to Load Steering Files
 - Creating a new task or starting work on something → `steering/task-workflow.md`
 - Running commands, reading or writing files inside a workspace → `steering/workspace-ops.md`
+- Sending prompts to or monitoring workspace agents → `steering/agent-interaction.md`
 ```
 
 ---
@@ -164,30 +166,29 @@ All work must start with a Coder Task via `coder_create_task`. This is what make
 3. **Wait for the workspace to be ready**
    - Poll `coder_get_task_status` every 10 seconds
    - Continue polling until status is no longer `pending` or `starting`
-   - Once running, call `coder_report_task` with `state=working` and summary `"Workspace ready, starting work"`
-   - If the task has not started within 5 minutes, call `coder_report_task` with `state=failure` and stop
+   - Once running, the workspace is ready for work
+   - If the task has not started within 5 minutes, stop the workspace and inform the user
 
 4. **Get the workspace name**
    - Call `coder_get_task_logs` to retrieve workspace connection details
    - The workspace name is required for all subsequent `coder_workspace_*` tool calls
 
-**Section: Reporting progress during work**
+**Section: Monitoring task progress**
 
-Call `coder_report_task` with `state=working` at each meaningful step. Summaries must be under 160 characters with no newlines. Good examples:
-- `"Reading project structure in /home/coder/app"`
-- `"Implementing the auth handler in src/api/auth.go"`
-- `"Running tests — waiting for results"`
+Task state is managed by the agent running inside the workspace (e.g., Claude Code). External agents can monitor the state by calling `coder_get_task_status` periodically to check:
+- `status`: Overall task status (active, paused, stopped)
+- `state.state`: Current work state (working, idle, failure)
+- `state.message`: Description of current activity
 
 **Section: Completing or failing a task**
 
 When work is done:
-1. Call `coder_report_task` with `state=idle` and a summary of what was accomplished
-2. Ask the user if they want to stop the workspace or keep it running for review
-3. If stopping: call `coder_create_workspace_build` with `transition=stop`
+1. Ask the user if they want to stop the workspace or keep it running for review
+2. If stopping: call `coder_create_workspace_build` with `transition=stop`
 
 If something goes wrong:
-1. Call `coder_report_task` with `state=failure` and a clear description of the failure
-2. Stop the workspace — do not leave it running after a failure
+1. Stop the workspace with `coder_create_workspace_build` — do not leave it running after a failure
+2. Inform the user of the failure
 
 ---
 
@@ -236,7 +237,53 @@ Always use the dedicated file tools instead of bash `cat` / `echo` / `heredoc`:
 
 ---
 
-## Acceptance Criteria for the Prototype
+## 5. `steering/agent-interaction.md` — Collaborating with Workspace Agents
+
+This file teaches Kiro how to interact with AI agents running inside task workspaces (e.g., Claude Code, Cursor, GitHub Copilot Workspace).
+
+### Content Requirements
+
+**Section: Understanding agent types**
+
+Explain the difference between:
+- External agents (Kiro running outside the workspace)
+- Workspace agents (Claude Code, Cursor running inside the workspace)
+
+**Section: Using `coder_send_task_input`**
+
+How to send prompts and instructions to workspace agents:
+- When to delegate work vs. do it yourself
+- How to structure effective prompts
+- Monitoring workspace agent progress
+- Handling workspace agent responses
+
+**Section: Using `coder_get_task_logs`**
+
+How to retrieve and parse workspace logs:
+- Getting workspace connection details after task creation
+- Monitoring workspace agent activity
+- Extracting information from agent responses
+- Debugging failures
+
+**Section: Collaboration patterns**
+
+Common patterns for working with workspace agents:
+- **Orchestrator pattern:** External agent coordinates, workspace agent implements
+- **Delegator pattern:** Send comprehensive prompt, workspace agent does most work
+- **Hybrid pattern:** External agent handles infrastructure, workspace agent handles logic
+- **Iterative pattern:** External and workspace agents refine work together
+
+**Section: Monitoring workspace agent state**
+
+How to track workspace agent progress:
+- Understanding task state (working, idle, failure)
+- Polling `coder_get_task_status` to monitor progress
+- Knowing when to wait vs. when to intervene
+- Handling workspace agent failures
+
+---
+
+## 6. Acceptance Criteria for the Prototype
 
 The prototype is working when a developer can complete this full loop in Kiro, without installing the Coder CLI:
 
@@ -245,9 +292,28 @@ The prototype is working when a developer can complete this full loop in Kiro, w
 3. Say: *"I want to start working on a new feature using Coder"*
 4. Kiro shows available templates and asks the developer to confirm one
 5. Kiro calls `coder_create_task` — within 60 seconds the task appears in the Coder Tasks UI with status `starting`
-6. Kiro polls until the workspace is running and updates the Tasks UI to `working`
+6. Kiro polls until the workspace is running
 7. Kiro runs `ls /home/coder` in the workspace and shows the output in the conversation
-8. Developer triggers the "Report Coder Task Complete" hook — Kiro reports `idle` in the Tasks UI and stops the workspace
+8. Developer triggers the "Stop Coder Workspace" hook — Kiro stops the workspace
+
+---
+
+## Task State Management
+
+**IMPORTANT:** Task state (working/idle/failure) is managed by the agent running INSIDE the workspace (e.g., Claude Code, Cursor, or other AI coding assistants). External Kiro agents cannot set or update task state.
+
+**What external agents CAN do:**
+- Create tasks via `coder_create_task`
+- Monitor task status via `coder_get_task_status` (read-only)
+- Stop workspaces via `coder_create_workspace_build`
+- Execute commands and file operations in the workspace
+
+**What external agents CANNOT do:**
+- Report task progress or completion (no `coder_report_task` tool exists)
+- Update task state directly
+- Mark tasks as complete or failed
+
+The task state visible in the Coder Tasks UI is set by the workspace agent as it performs work. External monitoring agents can observe this state but not modify it.
 
 ---
 
@@ -260,10 +326,9 @@ The prototype is working when a developer can complete this full loop in Kiro, w
 | `coder_list_template_version_parameters` | Before task creation — show configurable template options |
 | `coder_create_task` | **Primary provisioning tool** — creates the Coder Task and its underlying workspace |
 | `coder_get_task_status` | Poll until the task workspace is running |
-| `coder_get_task_logs` | Get workspace name and connection details after task creation |
+| `coder_get_task_logs` | Get workspace logs including agent activity and responses |
 | `coder_list_tasks` | Find existing running tasks to avoid creating duplicates |
-| `coder_send_task_input` | Send follow-up prompts to a running task |
-| `coder_report_task` | Report progress (`working`) and completion (`idle` or `failure`) to the Tasks UI |
+| `coder_send_task_input` | Send prompts/instructions to workspace agent (Claude Code, Cursor, etc.) |
 | `coder_delete_task` | Clean up a completed task |
 | `coder_list_workspaces` | Look up workspace name if not available from task logs |
 | `coder_workspace_bash` | Run a command inside the task workspace |
