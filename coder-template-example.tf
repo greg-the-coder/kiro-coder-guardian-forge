@@ -1,5 +1,13 @@
-# Example Coder Workspace Template with Kiro MCP Auto-Configuration
-# Add this to your existing Coder workspace template
+# Example Coder Workspace Template with Kiro MCP Auto-Configuration and AI Task Support
+# This template is designed for AI agent work with proper task lifecycle management
+
+terraform {
+  required_providers {
+    coder = {
+      source = "coder/coder"
+    }
+  }
+}
 
 resource "coder_agent" "dev" {
   arch = "amd64"
@@ -71,7 +79,55 @@ MCPEOF
   EOT
 }
 
-# Alternative: Create as a separate file for better organization
+# ============================================
+# AI Task Resource (REQUIRED for this power)
+# ============================================
+
+resource "coder_ai_task" "main" {
+  agent_id = coder_agent.dev.id
+  
+  # Task identification
+  display_name = "AI Development Task"
+  description  = "Ephemeral workspace for AI agent development work"
+  
+  # Task lifecycle settings
+  timeout_minutes = 120  # Auto-stop after 2 hours of inactivity
+  auto_stop       = true # Automatically stop when task completes
+  
+  # Optional: Resource limits for task workspaces
+  # max_cpu    = "2"
+  # max_memory = "4Gi"
+}
+
+# ============================================
+# Template Metadata (Optional but Recommended)
+# ============================================
+
+# Add metadata to help identify this as a task-ready template
+resource "coder_metadata" "template_info" {
+  resource_id = coder_ai_task.main.id
+  
+  item {
+    key   = "template_type"
+    value = "ai-task"
+  }
+  
+  item {
+    key   = "supports_ai_agents"
+    value = "true"
+  }
+  
+  item {
+    key   = "kiro_compatible"
+    value = "true"
+  }
+}
+
+# ============================================
+# Alternative: Separate Script for MCP Setup
+# ============================================
+
+# You can also configure MCP as a separate script for better organization
 resource "coder_script" "kiro_mcp_setup" {
   agent_id     = coder_agent.dev.id
   display_name = "Configure Kiro MCP"

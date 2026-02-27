@@ -2,6 +2,52 @@
 
 All notable changes to Kiro Coder Guardian Forge are documented in this file.
 
+## [2.4.0] - 2026-02-27 - Task-Ready Template Requirement
+
+### Changed
+
+**This power now requires templates that define a `coder_ai_task` resource.**
+
+This ensures templates are specifically designed for AI agent work with proper task lifecycle management.
+
+**What changed:**
+- Template selection now filters for task-ready templates
+- Documentation updated to explain `coder_ai_task` requirement
+- Template example updated to include `coder_ai_task` resource
+- Troubleshooting updated with guidance for missing task-ready templates
+
+**Benefits:**
+- ✅ Proper task lifecycle management in Coder Tasks UI
+- ✅ Automatic progress tracking and reporting
+- ✅ Task-specific resource limits and policies
+- ✅ Better visibility and auditability
+- ✅ Optimized for AI agent workflows
+
+**Task-ready template requirements:**
+```hcl
+resource "coder_ai_task" "main" {
+  agent_id        = coder_agent.dev.id
+  display_name    = "AI Development Task"
+  description     = "Ephemeral workspace for AI agent work"
+  timeout_minutes = 120
+  auto_stop       = true
+}
+```
+
+**Migration:**
+- Coder administrators must add `coder_ai_task` resource to templates
+- See `coder-template-example.tf` for complete example
+- Existing templates without `coder_ai_task` will not be usable for tasks
+
+**Files updated:**
+- POWER.md - Added "Task-Ready Templates" section
+- README.md - Updated prerequisites and quick start
+- steering/task-workflow.md - Updated template selection workflow
+- coder-template-example.tf - Added `coder_ai_task` resource and metadata
+- CHANGELOG.md - This entry
+
+---
+
 ## [2.3.0] - 2026-02-27 - Documentation Consolidation & Power Builder Compliance
 
 ### Changed

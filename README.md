@@ -16,7 +16,7 @@ A Kiro Power that connects Kiro agents to Coder deployments, enabling agents to 
 
 ### For Coder Administrators (One-Time Setup)
 
-Add MCP configuration to your workspace template. See `coder-template-example.tf` for complete example:
+Add MCP configuration and AI task resource to your workspace template. See `coder-template-example.tf` for complete example:
 
 ```hcl
 resource "coder_agent" "dev" {
@@ -39,6 +39,15 @@ MCPEOF
     sed -i "s|\${CODER_URL}|${CODER_URL}|g" ~/.kiro/settings/mcp.json
     sed -i "s|\${CODER_SESSION_TOKEN}|${CODER_SESSION_TOKEN}|g" ~/.kiro/settings/mcp.json
   EOT
+}
+
+# REQUIRED: AI Task resource for task lifecycle management
+resource "coder_ai_task" "main" {
+  agent_id        = coder_agent.dev.id
+  display_name    = "AI Development Task"
+  description     = "Ephemeral workspace for AI agent work"
+  timeout_minutes = 120
+  auto_stop       = true
 }
 ```
 
@@ -112,8 +121,8 @@ Four collaboration patterns: Orchestrator, Delegator, Hybrid, Iterative
 ## Prerequisites
 
 - Coder deployment with `mcp-server-http` experiment enabled
-- Workspace template configured with automatic MCP setup
-- At least one additional workspace template for creating tasks
+- Workspace template with automatic MCP setup
+- **At least one task-ready template** that defines a `coder_ai_task` resource
 
 ## Status
 

@@ -52,7 +52,7 @@ Call action "readSteering" with powerName="kiro-coder-guardian-forge", steeringF
   CODER_EXPERIMENTS="mcp-server-http" coder server
   ```
 - Workspace template with automatic MCP configuration (see Configuration section)
-- At least one additional workspace template for creating tasks
+- **At least one task-ready template** that defines a `coder_ai_task` resource for AI agent work
 
 **Developers:**
 - Access to a Coder workspace with MCP configuration
@@ -97,6 +97,46 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and session token.
 
 ## Configuration
+
+### Task-Ready Templates
+
+**This power requires templates that define a `coder_ai_task` resource.** This ensures the template is specifically designed for AI agent work with proper task lifecycle management.
+
+**What makes a template task-ready:**
+
+A task-ready template must include a `coder_ai_task` resource in its Terraform configuration:
+
+```hcl
+resource "coder_ai_task" "main" {
+  agent_id = coder_agent.dev.id
+  
+  # Task configuration
+  display_name = "AI Development Task"
+  description  = "Workspace for AI agent development work"
+  
+  # Optional: Task-specific settings
+  timeout_minutes = 120
+  auto_stop       = true
+}
+```
+
+**Benefits of task-ready templates:**
+- Proper task lifecycle management in Coder Tasks UI
+- Automatic progress tracking and reporting
+- Task-specific resource limits and policies
+- Better visibility and auditability
+- Optimized for AI agent workflows
+
+**Identifying task-ready templates:**
+
+When calling `coder_list_templates`, look for templates that:
+- Include "task" or "ai-task" in the name
+- Have descriptions mentioning AI agent support
+- Are specifically designed for ephemeral agent work
+
+**If no task-ready templates exist:**
+
+Ask your Coder administrator to create one. See `coder-template-example.tf` in this power for a complete example that includes both MCP configuration and `coder_ai_task` resource definition.
 
 ### MCP Server Setup
 
@@ -185,6 +225,7 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 
 ### Task Workflow
 - Always create tasks with `coder_create_task` (never `coder_create_workspace`)
+- **Only use task-ready templates** that define a `coder_ai_task` resource
 - Wait for task workspace to reach "running" status before operations
 - Monitor task status with `coder_get_task_status`
 - Always stop workspaces after completion to free resources
@@ -278,9 +319,12 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 
 ### Task Issues
 
-**Problem:** "No templates available"
+**Problem:** "No templates available" or "No task-ready templates found"
 
-**Solution:** Ask Coder admin to create workspace templates
+**Solution:** 
+1. Ask Coder admin to create a task-ready template with `coder_ai_task` resource
+2. See `coder-template-example.tf` in this power for complete example
+3. Template must include both MCP configuration and `coder_ai_task` resource
 
 **Problem:** "Task stuck in pending/starting"
 

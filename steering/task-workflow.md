@@ -14,27 +14,42 @@ This steering file teaches you how to create and monitor Coder Tasks. Load this 
 
 ## Step-by-Step Task Creation Workflow
 
-### Step 1: Choose a Template
+### Step 1: Choose a Task-Ready Template
 
-Before creating a task, you must identify which workspace template to use.
+Before creating a task, you must identify which workspace template to use. **Only templates that define a `coder_ai_task` resource are suitable for AI agent work.**
 
 **Actions:**
 1. Call `coder_list_templates` to show available templates
-2. Display the templates to the user with their names and descriptions
-3. Ask the user to confirm which template to use before proceeding
-4. Note the template's `ActiveVersionID` — this is the `template_version_id` needed for task creation
+2. **Filter for task-ready templates**: Check each template's metadata or description for indication of AI task support
+3. Display only task-ready templates to the user with their names and descriptions
+4. Ask the user to confirm which template to use before proceeding
+5. Note the template's `ActiveVersionID` — this is the `template_version_id` needed for task creation
+
+**Identifying Task-Ready Templates:**
+
+Templates designed for AI agent work will typically:
+- Include "task" or "ai-task" in the name or description
+- Have metadata indicating AI agent support
+- Define a `coder_ai_task` resource in their Terraform configuration
 
 **Example interaction:**
 ```
-Available templates:
-1. python-dev (ActiveVersionID: abc123) - Python development environment
-2. go-dev (ActiveVersionID: def456) - Go development environment
-3. node-dev (ActiveVersionID: ghi789) - Node.js development environment
+Available task-ready templates:
+1. python-ai-task (ActiveVersionID: abc123) - Python development with AI task support
+2. go-ai-task (ActiveVersionID: def456) - Go development with AI task support
+3. node-ai-task (ActiveVersionID: ghi789) - Node.js development with AI task support
 
 Which template would you like to use for this task?
 ```
 
-**Optional:** If the template has configurable parameters, call `coder_list_template_version_parameters` to show options and gather user preferences.
+**If no task-ready templates are available:**
+```
+No task-ready templates found. Task-ready templates must define a coder_ai_task resource.
+
+Please ask your Coder administrator to create a template with AI task support, or see the template example in this power for guidance.
+```
+
+**Optional:** If the template has configurable parameters, call `coder_template_version_parameters` to show options and gather user preferences.
 
 ### Step 2: Create the Task
 
