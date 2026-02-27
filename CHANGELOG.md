@@ -2,6 +2,67 @@
 
 All notable changes to Kiro Coder Guardian Forge are documented in this file.
 
+## [3.0.0] - 2026-02-27 - Git Worktree Work Sharing Pattern
+
+### Changed
+
+**BREAKING CHANGE: Work sharing now uses git worktrees instead of file copying.**
+
+This is a fundamental architectural change that significantly improves efficiency and aligns with standard git workflows.
+
+**Old approach (deprecated):**
+- Task workspaces were isolated
+- Files manually copied between workspaces
+- Large files required base64 encoding
+- Token-intensive (file contents in agent context)
+- Risk of incomplete transfers
+
+**New approach (git worktrees):**
+- Home workspace has main git repo (via `coder_git_clone`)
+- Task workspaces use git worktrees on feature branches
+- Work shared via git operations (commit, push, merge)
+- Minimal token usage (only git commands)
+- Full git history preserved
+
+**Benefits:**
+- ✅ 90-99% reduction in token usage
+- ✅ No file copying or base64 encoding
+- ✅ Full git history and blame preserved
+- ✅ Atomic operations per task
+- ✅ Multiple tasks can work simultaneously
+- ✅ Standard git workflow everyone knows
+
+**Prerequisites:**
+- Home workspace template with `coder_git_clone` resource
+- Shared storage for .git directory (PVC with ReadWriteMany)
+- Task workspace template with worktree initialization
+- Feature branch per task
+
+**Workflow:**
+1. Create feature branch in home workspace
+2. Create task with feature branch parameter
+3. Task workspace initializes worktree automatically
+4. Task commits directly to feature branch
+5. Home workspace merges feature branch when complete
+6. Clean up and stop task workspace
+
+**Migration:**
+- Update home workspace template to include `coder_git_clone`
+- Add shared storage (PVC) for .git directory
+- Update task workspace template with worktree initialization
+- Update task creation to include feature branch parameter
+
+**Files updated:**
+- WORK-TRANSFER-PATTERN.md - Complete rewrite with git worktree approach
+- steering/task-workflow.md - Updated task creation and completion workflows
+- POWER.md - Updated work sharing section and best practices
+- coder-template-example.tf - Added git worktree support and shared storage
+- CHANGELOG.md - This entry
+
+**See WORK-TRANSFER-PATTERN.md for complete implementation details.**
+
+---
+
 ## [2.4.0] - 2026-02-27 - Task-Ready Template Requirement
 
 ### Changed

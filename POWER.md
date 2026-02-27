@@ -230,12 +230,12 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 - Monitor task status with `coder_get_task_status`
 - Always stop workspaces after completion to free resources
 
-### Work Transfer (Critical)
-- **Home workspace is the source of truth** - where Kiro runs
-- **Task workspaces are ephemeral** - temporary execution environments
-- **Always transfer work before stopping** task workspace
-- Use token-efficient methods: git patches or bash direct transfer
-- Transfer at checkpoints for long tasks
+### Work Sharing (Critical)
+- **Home workspace is the source of truth** - contains main git repository
+- **Task workspaces use git worktrees** - each on a feature branch
+- **Share via git operations** - commit, push, merge (no file copying)
+- Use `--no-ff` flag when merging to preserve history
+- Always commit and push from task workspace before merging
 - See `WORK-TRANSFER-PATTERN.md` for complete implementation
 
 ### Workspace Operations
@@ -249,22 +249,33 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 - Four patterns: Orchestrator, Delegator, Hybrid, Iterative
 - See `steering/agent-interaction.md` for detailed patterns
 
-## Work Transfer Pattern
+## Work Sharing Pattern
 
-**Critical concept:** Task workspaces are ephemeral. Always transfer work to home workspace before stopping.
+**Git worktrees provide the optimal workflow for sharing work between home and task workspaces.**
 
-**Transfer workflow:**
-1. Identify changed files in task workspace
-2. Read files from task workspace
-3. Write files to home workspace
-4. Verify transfer succeeded
-5. Commit in home workspace (if using git)
-6. Stop task workspace
+### Architecture
 
-**Token-efficient methods:**
-- **Git patch** (recommended): Only transfers diffs, minimal tokens
-- **Bash direct**: Zero tokens for file content
-- Avoid reading large files into agent context
+- **Home workspace** contains the main git repository (cloned via `coder_git_clone`)
+- **Task workspaces** use git worktrees pointing to feature branches
+- Work is shared via standard git operations (commit, push, merge)
+- No manual file copying needed
+
+### Workflow
+
+1. **Create feature branch** in home workspace
+2. **Create task** with feature branch parameter
+3. **Task workspace** initializes git worktree automatically
+4. **Task commits** directly to feature branch
+5. **Home workspace merges** feature branch when complete
+6. **Clean up** and stop task workspace
+
+### Benefits
+
+- ✅ **Efficient** - No file copying, minimal tokens
+- ✅ **Standard** - Uses familiar git workflows
+- ✅ **Atomic** - Each task works on isolated branch
+- ✅ **Auditable** - Complete git history preserved
+- ✅ **Scalable** - Multiple tasks can work simultaneously
 
 **See `WORK-TRANSFER-PATTERN.md` for complete implementation with code examples.**
 

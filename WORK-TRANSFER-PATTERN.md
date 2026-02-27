@@ -1,1179 +1,669 @@
-# Work Transfer Pattern: Task to Home Workspace
+# Work Sharing Pattern: Git Worktrees for Coder Tasks
 
-This document describes the fundamental pattern for transferring work from ephemeral Coder Task workspaces back to the originating Kiro workspace (home workspace).
+This document describes the recommended pattern for sharing work between the home Coder workspace (where Kiro runs) and ephemeral Coder Task workspaces using git worktrees.
 
 ---
 
 ## Core Concept
 
-**Home Workspace:** The Coder workspace where Kiro is running - this is the permanent record and source of truth for all project work.
+**Home Workspace:** Contains the main git repository (cloned via `coder_git_clone` resource). This is the permanent source of truth with the primary working tree on the `main` branch.
 
-**Task Workspace:** Ephemeral workspace created for specific work - temporary execution environment that gets cleaned up after work is transferred back.
+**Task Workspace:** Uses a git worktree pointing to a feature branch. Each task works in isolation on its own branch, commits directly to git, and pushes changes to the remote.
 
-**Pattern:** Work is performed in task workspaces, then transferred back to home workspace at completion or major checkpoints.
+**Pattern:** Work is shared via standard git operations (commit, push, merge) instead of manual file copying. This is significantly more efficient, preserves git history, and aligns with standard development workflows.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│   Home Workspace (Kiro Running)    │
-│   - Source of truth                 │
-│   - Permanent storage               │
-│   - Project repository              │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────────┐
+│   Home Workspace (Kiro Running)            │
+│   /workspaces/my-project/                  │
+│   ├── .git/              (shared)          │
+│   ├── main branch        (primary tree)    │
+│   └── Source of truth                      │
+└──────────────┬──────────────────────────────┘
                │
-               │ 1. Create task
-               ↓
-┌─────────────────────────────────────┐
-│   Task Workspace (Ephemeral)       │
-│   - Temporary execution             │
-│   - Isolated environment            │
-│   - Work performed here             │
-└──────────────┬──────────────────────┘
+               │ Shared .git directory
+               │ (via network mount or shared storage)
                │
-               │ 2. Transfer work back
+               ├─────────────────────────────────┐
+               │                                 │
+               ↓                                 ↓
+┌──────────────────────────────┐  ┌──────────────────────────────┐
+│  Task Workspace 1            │  │  Task Workspace 2            │
+│  /workspaces/task-1/         │  │  /workspaces/task-2/         │
+│  ├── .git/ → (shared)        │  │  ├── .git/ → (shared)        │
+│  ├── feature/task-1 branch   │  │  ├── feature/task-2 branch   │
+│  └── Git worktree            │  │  └── Git worktree            │
+└──────────────────────────────┘  └──────────────────────────────┘
+               │                                 │
+               │ git commit + push               │ git commit + push
+               ↓                                 ↓
+┌─────────────────────────────────────────────┐
+│   Remote Git Repository                     │
+│   ├── main                                  │
+│   ├── feature/task-1                        │
+│   └── feature/task-2                        │
+└─────────────────────────────────────────────┘
+               │
+               │ git fetch + merge
                ↓
-┌─────────────────────────────────────┐
-│   Home Workspace (Updated)         │
-│   - Work integrated                 │
-│   - Files updated                   │
-│   - Ready for next task             │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│   Home Workspace (Updated)                  │
+│   All feature branches merged to main       │
+└─────────────────────────────────────────────┘
 ```
 
 ---
 
-## Transfer Points
+## Prerequisites
 
-### 1. Task Completion (Required)
-Transfer all work when task is complete before stopping workspace.
+### Coder Template Requirements
 
-### 2. Major Checkpoints (Recommended)
-Transfer work at significant milestones:
-- Feature implementation complete
-- Tests passing
-- Phase of multi-phase work complete
-- Before long break or end of day
+**Home workspace template must include:**
 
-### 3. Failure Recovery (Critical)
-Transfer any salvageable work before stopping failed task workspace.
+```hcl
+# Clone the project repository
+resource "coder_git_clone" "project" {
+  agent_id = coder_agent.dev.id
+  url      = "https://github.com/org/project.git"
+  path     = "/workspaces/project"
+}
+
+# Shared storage for .git directory
+resource "kubernetes_persistent_volume_claim" "git_storage" {
+  metadata {
+    name = "git-storage-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+  }
+  spec {
+    access_modes = ["ReadWriteMany"]  # Multiple workspaces can access
+    resources {
+      requests = {
+        storage = "10Gi"
+      }
+    }
+  }
+}
+```
+
+**Task workspace template must include:**
+
+```hcl
+# Mount shared .git directory
+resource "kubernetes_persistent_volume_claim" "git_storage" {
+  metadata {
+    name = "git-storage-${var.home_workspace_owner}-${var.home_workspace_name}"
+  }
+  # Reference the home workspace's PVC
+}
+
+# Task-specific configuration
+resource "coder_ai_task" "main" {
+  agent_id = coder_agent.dev.id
+  # ... task configuration ...
+}
+```
 
 ---
 
-## Transfer Workflow
+## Workflow
 
-### Step 1: Identify Changed Files
+### Step 1: Create Task with Feature Branch
 
-**In task workspace, identify what changed:**
+When creating a Coder Task, specify the feature branch:
+
+```python
+# Create task for specific work
+task = coder_create_task(
+    input="Implement user authentication API",
+    template_version_id="task-template-id",
+    rich_parameter_values={
+        "feature_branch": "feature/auth-api",
+        "home_workspace": f"{owner}/{workspace_name}",
+        "project_path": "/workspaces/my-project"
+    }
+)
+```
+
+### Step 2: Task Workspace Initializes Git Worktree
+
+The task workspace startup script automatically sets up the git worktree:
 
 ```bash
-# Option A: Git-based (if using git)
+#!/bin/bash
+# Task workspace startup script
+
+# Get parameters
+FEATURE_BRANCH="${FEATURE_BRANCH}"
+HOME_WORKSPACE="${HOME_WORKSPACE}"
+PROJECT_PATH="${PROJECT_PATH}"
+SHARED_GIT_DIR="/mnt/shared-git/${HOME_WORKSPACE}/.git"
+
+# Create worktree directory
+WORKTREE_PATH="/workspaces/task-workspace"
+mkdir -p "$WORKTREE_PATH"
+
+# Create git worktree pointing to feature branch
+cd "$PROJECT_PATH"
+git worktree add "$WORKTREE_PATH" -b "$FEATURE_BRANCH"
+
+# Set up git config for task
+cd "$WORKTREE_PATH"
+git config user.name "Kiro Agent"
+git config user.email "kiro@coder.com"
+
+echo "✅ Git worktree ready at $WORKTREE_PATH on branch $FEATURE_BRANCH"
+```
+
+### Step 3: Work in Task Workspace
+
+The task workspace works directly with git:
+
+```bash
+# Task workspace operations
+cd /workspaces/task-workspace
+
+# Make changes
+echo "new feature" > src/auth.go
+
+# Commit directly to feature branch
+git add .
+git commit -m "Implement authentication API"
+
+# Push to remote
+git push origin feature/auth-api
+```
+
+**No file copying needed!** All work is committed directly to git.
+
+### Step 4: Merge to Home Workspace
+
+When task completes, merge the feature branch in the home workspace:
+
+```python
+# In home workspace
 coder_workspace_bash(
-  workspace="task-workspace",
-  command="cd /home/coder/project && git status --porcelain",
-  timeout_ms=15000
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/my-project
+        
+        # Fetch latest changes
+        git fetch origin
+        
+        # Merge feature branch
+        git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}"
+        
+        # Push to remote
+        git push origin main
+    """,
+    timeout_ms=30000
 )
+```
 
-# Option B: Find recently modified files
+### Step 5: Clean Up Task Workspace
+
+After successful merge, clean up the worktree and stop the task workspace:
+
+```python
+# Remove worktree reference (optional - happens automatically on workspace deletion)
 coder_workspace_bash(
-  workspace="task-workspace",
-  command="find /home/coder/project -type f -mmin -60",
-  timeout_ms=15000
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/my-project
+        git worktree remove /workspaces/task-workspace --force
+    """,
+    timeout_ms=15000
 )
 
-# Option C: Compare with known file list
-coder_workspace_bash(
-  workspace="task-workspace",
-  command="cd /home/coder/project && find . -type f -newer /tmp/start_marker",
-  timeout_ms=15000
-)
-```
-
-### Step 2: Read Changed Files from Task Workspace
-
-For each changed file:
-
-```bash
-# Read file content
-content = coder_workspace_read_file(
-  workspace="task-workspace",
-  path="/home/coder/project/src/feature.go"
-)
-```
-
-### Step 3: Write Files to Home Workspace
-
-For each file read from task workspace:
-
-```bash
-# Write to home workspace
-coder_workspace_write_file(
-  workspace="home-workspace",  # Your Kiro workspace
-  path="/home/coder/project/src/feature.go",
-  content=base64_encode(content)
-)
-```
-
-### Step 4: Verify Transfer
-
-```bash
-# Verify file exists in home workspace
-coder_workspace_ls(
-  workspace="home-workspace",
-  path="/home/coder/project/src"
-)
-
-# Optionally: Read back and compare checksums
-```
-
-### Step 5: Commit to Git (Optional but Recommended)
-
-```bash
-# In home workspace, commit the transferred work
-coder_workspace_bash(
-  workspace="home-workspace",
-  command="cd /home/coder/project && git add . && git commit -m 'Task: [description]'",
-  timeout_ms=30000
-)
-```
-
-### Step 6: Stop Task Workspace
-
-```bash
-# Now safe to stop - work is preserved in home workspace
+# Stop task workspace
 coder_create_workspace_build(
-  workspace_id="task-workspace-id",
-  transition="stop"
+    workspace_id=task_workspace_id,
+    transition="stop"
 )
 ```
+
+---
+
+## Benefits
+
+### Efficiency
+- ✅ **No file copying**: Direct git operations instead of manual transfer
+- ✅ **No base64 encoding**: No need to encode/decode large files
+- ✅ **Minimal tokens**: Only git commands in agent context, not file contents
+- ✅ **Fast operations**: Git is optimized for this workflow
+
+### Git Integration
+- ✅ **Full history**: Complete git history and blame information preserved
+- ✅ **Atomic commits**: Each task commits to its own branch
+- ✅ **Standard workflow**: Everyone knows how to use git
+- ✅ **Branch isolation**: Tasks don't interfere with each other
+
+### Collaboration
+- ✅ **Multiple tasks**: Can work simultaneously on different branches
+- ✅ **Code review**: Feature branches can be reviewed before merge
+- ✅ **Rollback**: Easy to revert changes if needed
+- ✅ **Conflict resolution**: Standard git merge conflict handling
+
+### Auditability
+- ✅ **Complete history**: All changes tracked in git
+- ✅ **Author information**: Commits show who made changes
+- ✅ **Timestamps**: When changes were made
+- ✅ **Commit messages**: Why changes were made
 
 ---
 
 ## Implementation Patterns
 
-**IMPORTANT: Token Efficiency Considerations**
+### Pattern A: Simple Feature Branch (Recommended)
 
-The patterns below are ordered by token efficiency. For production use, prefer Pattern A (Git Patch) or Pattern B (Bash Direct) to minimize agent context usage and token consumption.
-
-### Pattern A: Git Patch Transfer (MOST RECOMMENDED - Minimal Tokens)
-
-**Use git patches to transfer only diffs, not entire file contents. This is the most token-efficient method.**
+**Use for:** Most tasks - single feature implementation
 
 ```python
-# Pseudo-code for git patch transfer
-def transfer_via_git_patch(task_ws, home_ws, project_path, task_description):
+def create_task_with_worktree(task_description, feature_branch):
     """
-    Most efficient method for git projects:
-    - Only transfers diffs (changes), not full files
-    - Minimal token usage (patch files are typically 1-10KB)
-    - Preserves git history
-    - Works with files of any size
+    Create task that works on a feature branch via git worktree
     """
     
-    # 1. Commit changes in task workspace
+    # 1. Create feature branch in home workspace
     coder_workspace_bash(
-        workspace=task_ws,
+        workspace=home_workspace,
         command=f"""
-            cd {project_path}
+            cd /workspaces/my-project
+            git checkout -b {feature_branch}
+            git push -u origin {feature_branch}
+        """,
+        timeout_ms=15000
+    )
+    
+    # 2. Create task with feature branch parameter
+    task = coder_create_task(
+        input=task_description,
+        template_version_id=task_template_id,
+        rich_parameter_values={
+            "feature_branch": feature_branch,
+            "home_workspace": home_workspace,
+            "project_path": "/workspaces/my-project"
+        }
+    )
+    
+    # 3. Wait for task workspace to be ready
+    # (worktree is set up automatically by task startup script)
+    
+    # 4. Task workspace works and commits to feature branch
+    # (happens in task workspace)
+    
+    # 5. When task completes, merge to main
+    coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"""
+            cd /workspaces/my-project
+            git checkout main
+            git fetch origin
+            git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}"
+            git push origin main
+        """,
+        timeout_ms=30000
+    )
+    
+    # 6. Stop task workspace
+    coder_create_workspace_build(
+        workspace_id=task.workspace_id,
+        transition="stop"
+    )
+    
+    return task
+```
+
+### Pattern B: Checkpoint Commits
+
+**Use for:** Long-running tasks with multiple phases
+
+```python
+def task_with_checkpoints(task_description, feature_branch):
+    """
+    Task commits at checkpoints, home workspace can track progress
+    """
+    
+    # Create task (same as Pattern A)
+    task = create_task_with_worktree(task_description, feature_branch)
+    
+    # Task workspace commits at each checkpoint
+    # Phase 1
+    coder_workspace_bash(
+        workspace=task_workspace,
+        command="""
+            cd /workspaces/task-workspace
+            # ... do work ...
             git add .
-            git commit -m "Task: {task_description}" || echo "Nothing to commit"
+            git commit -m "Phase 1: Design complete"
+            git push origin feature/task
         """,
-        timeout_ms=30000
+        timeout_ms=60000
     )
     
-    # 2. Create patch file (contains only diffs, very small)
+    # Home workspace can fetch and review progress
     coder_workspace_bash(
-        workspace=task_ws,
+        workspace=home_workspace,
         command=f"""
-            cd {project_path}
-            git format-patch -1 HEAD --stdout > /tmp/task.patch
+            cd /workspaces/my-project
+            git fetch origin
+            git log origin/{feature_branch} --oneline
         """,
-        timeout_ms=30000
+        timeout_ms=15000
     )
     
-    # 3. Transfer patch (small file, minimal tokens)
-    patch_content = coder_workspace_read_file(
-        workspace=task_ws,
-        path="/tmp/task.patch"
-    )
+    # Continue with more phases...
+    # Final merge happens when all phases complete
+```
+
+### Pattern C: Multiple Concurrent Tasks
+
+**Use for:** Parallel work on different features
+
+```python
+def create_multiple_tasks(tasks):
+    """
+    Create multiple tasks working on different feature branches simultaneously
+    """
     
-    coder_workspace_write_file(
-        workspace=home_ws,
-        path="/tmp/task.patch",
-        content=patch_content
-    )
+    task_results = []
     
-    # 4. Apply patch in home workspace
-    result = coder_workspace_bash(
-        workspace=home_ws,
-        command=f"""
-            cd {project_path}
-            git am /tmp/task.patch
-            rm /tmp/task.patch
-        """,
-        timeout_ms=30000
-    )
+    for task_desc, feature_branch in tasks:
+        # Each task gets its own feature branch and worktree
+        task = create_task_with_worktree(task_desc, feature_branch)
+        task_results.append((task, feature_branch))
     
-    if result.exit_code != 0:
-        # Fallback: try git apply if git am fails
+    # All tasks work in parallel
+    # Each commits to its own feature branch
+    
+    # When all complete, merge all branches
+    for task, feature_branch in task_results:
         coder_workspace_bash(
-            workspace=home_ws,
+            workspace=home_workspace,
             command=f"""
-                cd {project_path}
-                git apply /tmp/task.patch
-                git add .
-                git commit -m "Task: {task_description}"
-                rm /tmp/task.patch
+                cd /workspaces/my-project
+                git fetch origin
+                git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}"
             """,
             timeout_ms=30000
         )
     
-    return True
-```
-
-**Token Efficiency:**
-- ✅ Patch file contains only diffs (lines changed), not entire files
-- ✅ Typical patch is 1-10KB even for large changes
-- ✅ Minimal agent context usage
-- ✅ Works with files of any size
-- ✅ Binary files handled efficiently
-
-### Pattern B: Bash Direct Transfer (RECOMMENDED - Zero Tokens for File Content)
-
-**Use bash commands to transfer files directly without reading content into agent context.**
-
-```python
-# Pseudo-code for bash-based direct transfer
-def transfer_via_bash_direct(task_ws, home_ws, project_path):
-    """
-    Most efficient for non-git projects:
-    - No file content in agent context
-    - Handles large files efficiently
-    - Works with binary files
-    - Preserves permissions
-    """
-    
-    # Option A: If workspaces share filesystem (common in Coder)
+    # Push all merges
     coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            # Get home workspace path
-            HOME_WS_PATH="/home/coder/workspaces/{home_ws}/project"
-            
-            # Sync files using rsync
-            rsync -av --delete {project_path}/ $HOME_WS_PATH/
+        workspace=home_workspace,
+        command="""
+            cd /workspaces/my-project
+            git push origin main
         """,
-        timeout_ms=120000
-    )
-    
-    # Option B: Use tar with pipe (if direct access available)
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            tar czf - . | (cd /home/coder/workspaces/{home_ws}/project && tar xzf -)
-        """,
-        timeout_ms=120000
+        timeout_ms=15000
     )
 ```
-
-**Token Efficiency:**
-- ✅ Zero tokens used for file content
-- ✅ Only bash command in context
-- ✅ Handles any file size
-- ✅ Fastest transfer method
-
-**Note:** This requires workspaces to have shared filesystem access or be on the same node. Check your Coder deployment configuration.
-
-### Pattern C: File List Transfer (For Small Changes)
-
-Transfer only changed files by reading them individually. Use only when:
-- Changes are small (< 5 files)
-- Files are small (< 100KB each)
-- Git is not available
-
-```python
-# Pseudo-code for selective file transfer
-def transfer_changed_files(task_ws, home_ws, project_path):
-    """
-    Transfer individual files - use sparingly due to token usage
-    """
-    
-    # 1. Get list of changed files
-    result = coder_workspace_bash(
-        workspace=task_ws,
-        command=f"cd {project_path} && find . -type f -mmin -60 | head -10"
-    )
-    
-    changed_files = [f for f in result.stdout.split('\n') if f.strip()]
-    
-    # IMPORTANT: Limit to prevent token overflow
-    if len(changed_files) > 10:
-        raise Exception("Too many files changed. Use git patch or bash direct transfer instead.")
-    
-    # 2. Transfer each file
-    for file_path in changed_files:
-        full_path = f"{project_path}/{file_path}"
-        
-        # Check file size first
-        size_result = coder_workspace_bash(
-            workspace=task_ws,
-            command=f"stat -f%z {full_path} 2>/dev/null || stat -c%s {full_path}"
-        )
-        
-        file_size = int(size_result.stdout.strip())
-        
-        if file_size > 100000:  # 100KB limit
-            raise Exception(f"File {file_path} too large ({file_size} bytes). Use git patch or bash transfer.")
-        
-        # Read from task workspace
-        content = coder_workspace_read_file(
-            workspace=task_ws,
-            path=full_path
-        )
-        
-        # Write to home workspace
-        coder_workspace_write_file(
-            workspace=home_ws,
-            path=full_path,
-            content=content
-        )
-    
-    return len(changed_files)
-```
-
-**Token Efficiency:**
-- ⚠️ Moderate token usage (file content in context)
-- ⚠️ Limited to small files and few changes
-- ⚠️ Not suitable for large projects
-
-### Pattern D: Full Directory Transfer (NOT RECOMMENDED - High Token Usage)
-
-**Avoid this pattern unless absolutely necessary. It reads all files into agent context.**
-
-```python
-# Pseudo-code for full transfer - AVOID IF POSSIBLE
-def transfer_full_directory(task_ws, home_ws, project_path):
-    """
-    WARNING: High token usage - only use for very small projects
-    """
-    
-    # 1. List all files in task workspace
-    files = coder_workspace_bash(
-        workspace=task_ws,
-        command=f"find {project_path} -type f | head -20"  # Limit to 20 files
-    )
-    
-    file_list = [f for f in files.stdout.split('\n') if f.strip()]
-    
-    if len(file_list) > 20:
-        raise Exception("Too many files. Use git patch or bash direct transfer instead.")
-    
-    # 2. For each file, read and transfer
-    for file_path in file_list:
-        content = coder_workspace_read_file(
-            workspace=task_ws,
-            path=file_path
-        )
-        
-        coder_workspace_write_file(
-            workspace=home_ws,
-            path=file_path,
-            content=content
-        )
-    
-    return len(file_list)
-```
-
-**Token Efficiency:**
-- ❌ High token usage (all file content in context)
-- ❌ Not suitable for production use
-- ❌ Risk of context window overflow
 
 ---
 
-## Token Usage Comparison
+## Task Template Configuration
 
-| Pattern | Token Usage | Best For | Limitations |
-|---------|-------------|----------|-------------|
-| Git Patch | **Minimal** (1-10KB) | Git projects, any size | Requires git |
-| Bash Direct | **Zero** (no file content) | Any project, any size | Requires shared filesystem |
-| File List | Moderate (file content) | < 5 small files | File size/count limits |
-| Full Directory | **High** (all content) | Tiny projects only | Not production-ready |
+### Required Template Parameters
 
-**Recommendation:** Always use Git Patch (Pattern A) for git projects, or Bash Direct (Pattern B) for non-git projects.
+Task templates should accept these parameters:
 
----
+```hcl
+variable "feature_branch" {
+  description = "Git feature branch for this task"
+  type        = string
+}
 
-## Implementation Patterns (Legacy - For Reference)
+variable "home_workspace" {
+  description = "Home workspace name (owner/workspace)"
+  type        = string
+}
 
-The patterns below are kept for reference but should be avoided in production due to token inefficiency.
-
-### Pattern A: Full Directory Transfer
-
-Transfer entire project directory:
-
-```python
-# Pseudo-code for full transfer
-def transfer_full_directory(task_ws, home_ws, project_path):
-    # 1. List all files in task workspace
-    files = coder_workspace_bash(
-        workspace=task_ws,
-        command=f"find {project_path} -type f"
-    )
-    
-    # 2. For each file, read and transfer
-    for file_path in files.split('\n'):
-        if file_path.strip():
-            # Read from task workspace
-            content = coder_workspace_read_file(
-                workspace=task_ws,
-                path=file_path
-            )
-            
-            # Write to home workspace
-            coder_workspace_write_file(
-                workspace=home_ws,
-                path=file_path,
-                content=base64_encode(content)
-            )
-    
-    return len(files.split('\n'))
+variable "project_path" {
+  description = "Path to project in home workspace"
+  type        = string
+  default     = "/workspaces/project"
+}
 ```
 
-### Pattern B: Git-Based Transfer
+### Startup Script
 
-Use git to identify and transfer only changed files:
-
-```python
-# Pseudo-code for git-based transfer
-def transfer_git_changes(task_ws, home_ws, project_path):
-    # 1. Get list of changed files
-    result = coder_workspace_bash(
-        workspace=task_ws,
-        command=f"cd {project_path} && git diff --name-only HEAD"
-    )
+```hcl
+resource "coder_agent" "dev" {
+  startup_script = <<-EOT
+    #!/bin/bash
+    set -e
     
-    changed_files = result.stdout.strip().split('\n')
+    # Parameters from template
+    FEATURE_BRANCH="${var.feature_branch}"
+    HOME_WORKSPACE="${var.home_workspace}"
+    PROJECT_PATH="${var.project_path}"
     
-    # 2. Transfer each changed file
-    for file_path in changed_files:
-        if file_path.strip():
-            full_path = f"{project_path}/{file_path}"
-            
-            # Read from task workspace
-            content = coder_workspace_read_file(
-                workspace=task_ws,
-                path=full_path
-            )
-            
-            # Write to home workspace
-            coder_workspace_write_file(
-                workspace=home_ws,
-                path=full_path,
-                content=base64_encode(content)
-            )
+    # Shared git directory (mounted from home workspace)
+    SHARED_GIT_DIR="/mnt/shared-git/${HOME_WORKSPACE}/.git"
+    WORKTREE_PATH="/workspaces/task-workspace"
     
-    return len(changed_files)
-```
-
-### Pattern C: Selective Transfer
-
-Transfer only specific files or directories:
-
-```python
-# Pseudo-code for selective transfer
-def transfer_selective(task_ws, home_ws, file_patterns):
-    transferred = []
+    # Wait for shared git directory to be available
+    echo "Waiting for shared git directory..."
+    timeout 60 bash -c "until [ -d '$SHARED_GIT_DIR' ]; do sleep 1; done"
     
-    for pattern in file_patterns:
-        # Find matching files
-        result = coder_workspace_bash(
-            workspace=task_ws,
-            command=f"find /home/coder/project -path '{pattern}' -type f"
-        )
-        
-        files = result.stdout.strip().split('\n')
-        
-        for file_path in files:
-            if file_path.strip():
-                # Read and transfer
-                content = coder_workspace_read_file(
-                    workspace=task_ws,
-                    path=file_path
-                )
-                
-                coder_workspace_write_file(
-                    workspace=home_ws,
-                    path=file_path,
-                    content=base64_encode(content)
-                )
-                
-                transferred.append(file_path)
+    # Create worktree
+    echo "Creating git worktree for branch: $FEATURE_BRANCH"
+    mkdir -p "$WORKTREE_PATH"
     
-    return transferred
-```
-
-### Pattern D: Bash-Based Direct Transfer (RECOMMENDED - Most Efficient)
-
-**For maximum efficiency and minimal token usage, use bash commands to transfer files directly between workspaces without reading content into agent context.**
-
-This is the **preferred method** as it:
-- ✅ Doesn't consume agent context with file contents
-- ✅ Handles large files efficiently
-- ✅ Transfers multiple files in one operation
-- ✅ Works with binary files
-- ✅ Preserves file permissions and metadata
-
-```python
-# Pseudo-code for bash-based direct transfer
-def transfer_via_bash_direct(task_ws, home_ws, project_path):
-    """
-    Most efficient transfer method - uses bash to copy files directly
-    without reading content into agent context
-    """
+    # Use git worktree add with shared .git directory
+    GIT_DIR="$SHARED_GIT_DIR" git worktree add "$WORKTREE_PATH" "$FEATURE_BRANCH"
     
-    # Get the actual workspace paths from Coder
-    # Task workspace is accessible at its workspace directory
-    # Home workspace is the current workspace
+    # Configure git for task
+    cd "$WORKTREE_PATH"
+    git config user.name "Kiro Agent"
+    git config user.email "kiro@coder.com"
     
-    # Option A: Use rsync (if available) - BEST
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            # Rsync from task workspace to home workspace via shared storage
-            # This assumes workspaces can access shared storage or use Coder's file sync
-            rsync -av --delete {project_path}/ /mnt/shared/{home_ws}/project/
-        """,
-        timeout_ms=120000
-    )
-    
-    # Option B: Use tar with pipe (if workspaces share filesystem)
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            tar czf - . | (cd /home/coder/project && tar xzf -)
-        """,
-        timeout_ms=120000
-    )
-    
-    # Option C: Use git push/pull (RECOMMENDED for git projects)
-    # This is the most efficient for version-controlled projects
-    
-    # 1. In task workspace: commit and push to a temporary branch
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            git add .
-            git commit -m "Task work complete" || true
-            git push origin HEAD:refs/heads/task-transfer-$(date +%s)
-        """,
-        timeout_ms=60000
-    )
-    
-    # 2. In home workspace: fetch and merge
-    coder_workspace_bash(
-        workspace=home_ws,
-        command=f"""
-            cd {project_path}
-            git fetch origin
-            git merge --no-ff origin/task-transfer-* -m "Merged task work"
-            git push origin --delete task-transfer-* || true
-        """,
-        timeout_ms=60000
-    )
-```
-
-### Pattern E: Tar-Based Transfer (For Non-Git Projects)
-
-For projects not using git, use tar but transfer via bash commands:
-
-```python
-# Pseudo-code for tar-based transfer via bash
-def transfer_via_tar_bash(task_ws, home_ws, project_path):
-    """
-    Transfer using tar, but execute via bash to avoid reading content
-    into agent context
-    """
-    
-    # Create tar and transfer in one operation
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            tar czf /tmp/transfer-$(date +%s).tar.gz .
-            
-            # Copy to home workspace via shared storage or Coder's file sync
-            cp /tmp/transfer-*.tar.gz /mnt/shared/{home_ws}/
-        """,
-        timeout_ms=120000
-    )
-    
-    # Extract in home workspace
-    coder_workspace_bash(
-        workspace=home_ws,
-        command=f"""
-            cd {project_path}
-            tar xzf /mnt/shared/transfer-*.tar.gz
-            rm /mnt/shared/transfer-*.tar.gz
-        """,
-        timeout_ms=120000
-    )
-```
-
-### Pattern F: Git-Based Transfer (MOST RECOMMENDED)
-
-**This is the most efficient method for git projects and should be the default:**
-
-```python
-def transfer_via_git(task_ws, home_ws, project_path, task_description):
-    """
-    Use git to transfer changes - most efficient and token-friendly
-    
-    This method:
-    - Only transfers diffs, not entire files
-    - Preserves history
-    - No file content in agent context
-    - Works with any file size
-    """
-    
-    # 1. In task workspace: commit all changes
-    result = coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            git add .
-            git commit -m "Task: {task_description}" || echo "Nothing to commit"
-            git rev-parse HEAD
-        """,
-        timeout_ms=30000
-    )
-    
-    commit_hash = result.stdout.strip().split('\n')[-1]
-    
-    # 2. Create a patch file (much smaller than full files)
-    coder_workspace_bash(
-        workspace=task_ws,
-        command=f"""
-            cd {project_path}
-            git format-patch -1 HEAD --stdout > /tmp/task-changes.patch
-        """,
-        timeout_ms=30000
-    )
-    
-    # 3. Transfer patch file (small, efficient)
-    patch_content = coder_workspace_read_file(
-        workspace=task_ws,
-        path="/tmp/task-changes.patch"
-    )
-    
-    coder_workspace_write_file(
-        workspace=home_ws,
-        path="/tmp/task-changes.patch",
-        content=patch_content
-    )
-    
-    # 4. Apply patch in home workspace
-    coder_workspace_bash(
-        workspace=home_ws,
-        command=f"""
-            cd {project_path}
-            git am /tmp/task-changes.patch
-            rm /tmp/task-changes.patch
-        """,
-        timeout_ms=30000
-    )
-    
-    return commit_hash
+    echo "✅ Git worktree ready at $WORKTREE_PATH on branch $FEATURE_BRANCH"
+    echo "   Shared .git: $SHARED_GIT_DIR"
+    echo "   Home workspace: $HOME_WORKSPACE"
+  EOT
+}
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Always Transfer Before Stopping
+### Branch Naming
 
-**Critical:** Never stop a task workspace without transferring work first.
+Use descriptive, task-specific branch names:
 
 ```
-✅ CORRECT:
-1. Complete work in task workspace
-2. Transfer files to home workspace
-3. Verify transfer successful
-4. Stop task workspace
-
-❌ WRONG:
-1. Complete work in task workspace
-2. Stop task workspace
-3. Lose all work!
+feature/auth-api
+feature/user-dashboard
+feature/payment-integration
+bugfix/login-error
+refactor/database-layer
 ```
 
-### 2. Use Token-Efficient Transfer Methods
+**Pattern:** `<type>/<description>`
+- `feature/` - New features
+- `bugfix/` - Bug fixes
+- `refactor/` - Code refactoring
+- `docs/` - Documentation updates
 
-**CRITICAL FOR PRODUCTION:** Choose transfer methods that minimize token usage.
+### Commit Messages
 
-**Recommended methods (in order of preference):**
-
-1. **Git Patch Transfer** (Pattern A)
-   - ✅ Minimal tokens (1-10KB patches)
-   - ✅ Works with any file size
-   - ✅ Preserves history
-   - Use for: All git projects
-
-2. **Bash Direct Transfer** (Pattern B)
-   - ✅ Zero tokens for file content
-   - ✅ Fastest method
-   - ✅ Handles large files
-   - Use for: Non-git projects, large files
-
-3. **File List Transfer** (Pattern C)
-   - ⚠️ Moderate token usage
-   - ⚠️ Limited to < 5 small files
-   - Use for: Emergency only, when git/bash not available
-
-**Avoid:**
-- ❌ Full directory transfer (Pattern D) - High token usage
-- ❌ Reading large files into agent context
-- ❌ Transferring binary files through agent
-
-### 3. Use Git for Change Tracking
-
-If your project uses git:
-- Initialize git in task workspace at start
-- Use git patches to transfer (minimal tokens)
-- Transfer only diffs, not full files
-- Commit in home workspace after transfer
-
-### 4. Verify Transfer Success
-
-Always verify files were transferred:
-```bash
-# Check file exists
-coder_workspace_ls(workspace="home-workspace", path="/path/to/file")
-
-# Or verify file count
-result = coder_workspace_bash(
-    workspace="home-workspace",
-    command="find /home/coder/project -type f | wc -l"
-)
-```
-
-### 5. Handle Transfer Failures
-
-```python
-try:
-    transfer_files(task_ws, home_ws, files)
-    verify_transfer(home_ws, files)
-except TransferError as e:
-    # Don't stop task workspace - work is still there
-    log_error(f"Transfer failed: {e}")
-    notify_user("Transfer failed - task workspace kept running")
-    # User can manually investigate or retry
-```
-
-### 6. Preserve File Metadata
-
-When possible, preserve:
-- File permissions
-- Timestamps
-- Directory structure
+Write clear, descriptive commit messages:
 
 ```bash
-# Preserve permissions with rsync
-rsync -av --perms --times source/ dest/
+# Good
+git commit -m "Implement JWT authentication for API endpoints"
+git commit -m "Add user dashboard with profile management"
+git commit -m "Fix login error when password contains special characters"
 
-# Or with tar
-tar --preserve-permissions -czf archive.tar.gz .
+# Avoid
+git commit -m "updates"
+git commit -m "fix"
+git commit -m "wip"
 ```
 
-### 7. Transfer Incrementally for Long Tasks
+### Merge Strategy
 
-For long-running tasks, transfer at checkpoints:
+Use `--no-ff` (no fast-forward) to preserve feature branch history:
 
-```
-Phase 1: Implement feature
-  → Transfer to home workspace (git patch)
-  → Commit: "Phase 1: Feature implementation"
-
-Phase 2: Add tests
-  → Transfer to home workspace (git patch)
-  → Commit: "Phase 2: Tests added"
-
-Phase 3: Documentation
-  → Transfer to home workspace (git patch)
-  → Commit: "Phase 3: Documentation complete"
+```bash
+git merge origin/feature/auth-api --no-ff -m "Merge feature/auth-api"
 ```
 
-### 8. Monitor Token Usage
+This creates a merge commit even if fast-forward is possible, making it clear when features were integrated.
 
-Be aware of token consumption:
+### Cleanup
+
+Clean up feature branches after successful merge:
+
+```bash
+# Delete local branch
+git branch -d feature/auth-api
+
+# Delete remote branch
+git push origin --delete feature/auth-api
+
+# Remove worktree reference
+git worktree prune
+```
+
+---
+
+## Troubleshooting
+
+### Problem: "Shared .git directory not found"
+
+**Cause:** Task workspace can't access home workspace's .git directory
+
+**Solutions:**
+1. Verify shared storage is configured correctly
+2. Check PVC is mounted in both workspaces
+3. Verify network mount permissions
+4. Check home workspace is running
+
+### Problem: "Worktree already exists"
+
+**Cause:** Previous task didn't clean up worktree
+
+**Solution:**
+```bash
+# In home workspace
+cd /workspaces/my-project
+git worktree list
+git worktree remove /workspaces/task-workspace --force
+git worktree prune
+```
+
+### Problem: "Branch already exists"
+
+**Cause:** Feature branch from previous task wasn't deleted
+
+**Solution:**
+```bash
+# Delete local and remote branch
+git branch -D feature/old-task
+git push origin --delete feature/old-task
+
+# Or use a unique branch name
+feature/auth-api-$(date +%s)
+```
+
+### Problem: "Merge conflicts"
+
+**Cause:** Feature branch conflicts with main
+
+**Solution:**
+```bash
+# In home workspace
+cd /workspaces/my-project
+git fetch origin
+git checkout feature/auth-api
+git rebase main
+
+# Resolve conflicts
+git add .
+git rebase --continue
+
+# Push resolved branch
+git push origin feature/auth-api --force
+
+# Merge to main
+git checkout main
+git merge feature/auth-api --no-ff
+```
+
+---
+
+## Comparison: Old vs. New Approach
+
+### Old Approach (File Copying)
 
 ```python
-# Before transfer
-print(f"Transferring {len(changed_files)} files")
-
-# Use git patch for efficiency
-if len(changed_files) > 5 or any_large_files:
-    use_git_patch_transfer()  # Minimal tokens
-else:
-    use_file_list_transfer()  # Moderate tokens
+# ❌ Token-intensive, error-prone
+for file in changed_files:
+    content = coder_workspace_read_file(workspace=task_ws, path=file)  # Large file in context
+    coder_workspace_write_file(workspace=home_ws, path=file, content=content)  # Base64 encoding
 ```
 
-### 9. Handle Large Files Specially
+**Problems:**
+- High token usage (file contents in agent context)
+- Base64 encoding overhead
+- No git history
+- Manual file tracking
+- Risk of incomplete transfer
 
-For large files (> 1MB):
-- ✅ Use git patch transfer (only diffs)
-- ✅ Use bash direct transfer (no agent context)
-- ❌ Never read into agent context
+### New Approach (Git Worktrees)
 
 ```python
-# Check file size before transfer
-size_result = coder_workspace_bash(
+# ✅ Efficient, standard git workflow
+coder_workspace_bash(
     workspace=task_ws,
-    command=f"stat -c%s {file_path}"
+    command="cd /workspaces/task-workspace && git add . && git commit -m 'Complete feature' && git push",
+    timeout_ms=30000
 )
 
-file_size = int(size_result.stdout.strip())
-
-if file_size > 1000000:  # 1MB
-    # Use git patch or bash direct
-    use_efficient_transfer_method()
-else:
-    # Can use file list transfer
-    use_standard_transfer()
+coder_workspace_bash(
+    workspace=home_ws,
+    command="cd /workspaces/my-project && git fetch && git merge origin/feature/task --no-ff",
+    timeout_ms=30000
+)
 ```
 
-### 10. Batch Small Changes
-
-For multiple small changes, batch them:
-
-```python
-# Instead of transferring after each change
-for change in changes:
-    make_change()
-    transfer()  # ❌ Inefficient
-
-# Batch changes
-for change in changes:
-    make_change()
-
-transfer_all_at_once()  # ✅ Efficient
-```
-
----
-
-## Error Handling
-
-### Transfer Failure
-
-```python
-def safe_transfer(task_ws, home_ws, files):
-    failed_files = []
-    
-    for file_path in files:
-        try:
-            content = coder_workspace_read_file(
-                workspace=task_ws,
-                path=file_path
-            )
-            
-            coder_workspace_write_file(
-                workspace=home_ws,
-                path=file_path,
-                content=content
-            )
-        except Exception as e:
-            failed_files.append((file_path, str(e)))
-    
-    if failed_files:
-        # Log failures but continue
-        log_warning(f"Failed to transfer {len(failed_files)} files")
-        # Keep task workspace running for manual recovery
-        return False
-    
-    return True
-```
-
-### Partial Transfer Recovery
-
-If transfer partially fails:
-1. Log which files succeeded
-2. Log which files failed
-3. Keep task workspace running
-4. Retry failed files
-5. Only stop workspace after full success
-
-### Workspace Connection Loss
-
-If connection to task workspace is lost:
-1. Don't panic - workspace may still be running
-2. Check workspace status: `coder_get_task_status`
-3. If running, retry transfer
-4. If stopped, work may be lost (this is why incremental transfer is important)
-
----
-
-## Integration with Task Workflow
-
-### Updated Task Lifecycle
-
-```
-1. Create task (coder_create_task)
-   ↓
-2. Wait for running (poll coder_get_task_status)
-   ↓
-3. Get workspace name (coder_get_task_logs)
-   ↓
-4. Do work in task workspace
-   ↓
-5. **TRANSFER WORK TO HOME WORKSPACE** ← NEW STEP
-   ↓
-6. Verify transfer successful
-   ↓
-7. Stop task workspace (coder_create_workspace_build)
-   ↓
-8. Optional: Delete task (coder_delete_task)
-```
-
-### Checkpoint Pattern
-
-For long tasks with checkpoints:
-
-```
-1. Create task
-   ↓
-2. Phase 1 work
-   ↓
-3. **CHECKPOINT: Transfer to home workspace**
-   ↓
-4. Phase 2 work
-   ↓
-5. **CHECKPOINT: Transfer to home workspace**
-   ↓
-6. Phase 3 work
-   ↓
-7. **FINAL: Transfer to home workspace**
-   ↓
-8. Stop task workspace
-```
-
----
-
-## Determining Home Workspace Name
-
-The home workspace is the workspace where Kiro is currently running:
-
-```bash
-# Get current workspace name from environment
-HOME_WORKSPACE = $CODER_WORKSPACE_NAME
-
-# Or construct from owner and workspace
-HOME_WORKSPACE = f"{CODER_WORKSPACE_OWNER_NAME}/{CODER_WORKSPACE_NAME}"
-```
-
-**In Kiro agent context:**
-- The home workspace is automatically known from environment variables
-- Task workspace name comes from `coder_get_task_logs` after creation
-- Always transfer FROM task workspace TO home workspace
-
----
-
-## Example: Complete Transfer Implementation
-
-```python
-def complete_task_with_transfer(task_description, template_id):
-    """
-    Complete workflow: create task, do work, transfer back, cleanup
-    Uses token-efficient git patch method
-    """
-    
-    # Get home workspace info
-    home_workspace = f"{os.getenv('CODER_WORKSPACE_OWNER_NAME')}/{os.getenv('CODER_WORKSPACE_NAME')}"
-    project_path = "/home/coder/project"
-    
-    # 1. Create task
-    task = coder_create_task(
-        input=task_description,
-        template_version_id=template_id
-    )
-    
-    # 2. Wait for running
-    while True:
-        status = coder_get_task_status(task_id=task.id)
-        if status.status == "running":
-            break
-        time.sleep(10)
-    
-    # 3. Get task workspace name
-    logs = coder_get_task_logs(task_id=task.id)
-    task_workspace = extract_workspace_name(logs)
-    
-    # 4. Do work in task workspace
-    # ... perform work using coder_workspace_* tools ...
-    
-    # 5. TRANSFER WORK BACK TO HOME WORKSPACE (TOKEN-EFFICIENT METHOD)
-    print(f"Transferring work from {task_workspace} to {home_workspace}...")
-    
-    # METHOD A: Git Patch Transfer (RECOMMENDED - Minimal Tokens)
-    if is_git_project(task_workspace, project_path):
-        print("Using git patch transfer (minimal tokens)...")
-        
-        # Commit changes in task workspace
-        coder_workspace_bash(
-            workspace=task_workspace,
-            command=f"""
-                cd {project_path}
-                git add .
-                git commit -m "Task: {task_description}" || echo "Nothing to commit"
-            """,
-            timeout_ms=30000
-        )
-        
-        # Create patch file (only diffs, very small)
-        coder_workspace_bash(
-            workspace=task_workspace,
-            command=f"""
-                cd {project_path}
-                git format-patch -1 HEAD --stdout > /tmp/task.patch
-            """,
-            timeout_ms=30000
-        )
-        
-        # Transfer patch (minimal token usage)
-        patch_content = coder_workspace_read_file(
-            workspace=task_workspace,
-            path="/tmp/task.patch"
-        )
-        
-        coder_workspace_write_file(
-            workspace=home_workspace,
-            path="/tmp/task.patch",
-            content=patch_content
-        )
-        
-        # Apply patch in home workspace
-        result = coder_workspace_bash(
-            workspace=home_workspace,
-            command=f"""
-                cd {project_path}
-                git am /tmp/task.patch || git apply /tmp/task.patch
-                rm /tmp/task.patch
-            """,
-            timeout_ms=30000
-        )
-        
-        print("✅ Git patch transfer complete (minimal tokens used)")
-    
-    # METHOD B: Bash Direct Transfer (ALTERNATIVE - Zero Tokens for Content)
-    else:
-        print("Using bash direct transfer (zero tokens for content)...")
-        
-        # Check if workspaces share filesystem
-        result = coder_workspace_bash(
-            workspace=task_workspace,
-            command=f"""
-                # Try to access home workspace path
-                if [ -d "/home/coder/workspaces/{home_workspace}" ]; then
-                    rsync -av --delete {project_path}/ /home/coder/workspaces/{home_workspace}/project/
-                    echo "RSYNC_SUCCESS"
-                else
-                    # Fallback: use tar
-                    cd {project_path}
-                    tar czf /tmp/transfer.tar.gz .
-                    echo "TAR_CREATED"
-                fi
-            """,
-            timeout_ms=120000
-        )
-        
-        if "RSYNC_SUCCESS" in result.stdout:
-            print("✅ Bash direct transfer complete (zero tokens used)")
-        else:
-            # Fallback: transfer tar file
-            tar_content = coder_workspace_read_file(
-                workspace=task_workspace,
-                path="/tmp/transfer.tar.gz"
-            )
-            
-            coder_workspace_write_file(
-                workspace=home_workspace,
-                path="/tmp/transfer.tar.gz",
-                content=tar_content
-            )
-            
-            coder_workspace_bash(
-                workspace=home_workspace,
-                command=f"cd {project_path} && tar xzf /tmp/transfer.tar.gz && rm /tmp/transfer.tar.gz",
-                timeout_ms=60000
-            )
-            
-            print("✅ Tar transfer complete")
-    
-    # 6. Verify transfer (quick check)
-    result = coder_workspace_bash(
-        workspace=home_workspace,
-        command=f"cd {project_path} && find . -type f | wc -l",
-        timeout_ms=15000
-    )
-    
-    file_count = int(result.stdout.strip())
-    print(f"✅ Verified: {file_count} files in home workspace")
-    
-    # 7. Stop task workspace
-    coder_create_workspace_build(
-        workspace_id=task.workspace_id,
-        transition="stop"
-    )
-    
-    print(f"✅ Task complete - work transferred to {home_workspace}")
-    
-    return {
-        "task_id": task.id,
-        "home_workspace": home_workspace,
-        "file_count": file_count,
-        "transfer_method": "git_patch" if is_git_project(task_workspace, project_path) else "bash_direct"
-    }
-
-
-def is_git_project(workspace, project_path):
-    """Check if project uses git"""
-    result = coder_workspace_bash(
-        workspace=workspace,
-        command=f"cd {project_path} && git rev-parse --git-dir 2>/dev/null",
-        timeout_ms=5000
-    )
-    return result.exit_code == 0
-```
+**Benefits:**
+- Minimal token usage (only git commands)
+- No encoding overhead
+- Full git history preserved
+- Automatic file tracking
+- Atomic operations
 
 ---
 
 ## Summary
 
-**Key Principles:**
-1. Home workspace is the source of truth
-2. Task workspaces are ephemeral execution environments
-3. Always transfer work before stopping task workspace
-4. **Use token-efficient transfer methods (git patch or bash direct)**
-5. Transfer at checkpoints for long tasks
-6. Verify transfer success before cleanup
-7. Use git for change tracking when possible
+**Git worktrees provide the optimal workflow for sharing work between home and task workspaces:**
 
-**Benefits:**
-- ✅ Permanent record in home workspace
-- ✅ No work lost when task workspaces are deleted
-- ✅ Clear data flow pattern
-- ✅ Easy to track project history
-- ✅ Supports incremental development
-- ✅ **Minimal token usage with efficient transfer methods**
+✅ **Efficient** - No file copying, minimal tokens  
+✅ **Standard** - Uses familiar git workflows  
+✅ **Atomic** - Each task works on isolated branch  
+✅ **Auditable** - Complete git history preserved  
+✅ **Scalable** - Multiple tasks can work simultaneously  
+✅ **Simple** - Standard git commands everyone knows  
 
-**Token Efficiency:**
-- ✅ Git patch: 1-10KB (only diffs)
-- ✅ Bash direct: Zero tokens for file content
-- ⚠️ File list: Moderate (use sparingly)
-- ❌ Full directory: High (avoid in production)
+**Key Requirements:**
+- Home workspace template with `coder_git_clone` resource
+- Shared storage for .git directory (PVC with ReadWriteMany)
+- Task workspace template with worktree initialization
+- Feature branch per task
 
-**Remember:** The task workspace is temporary - the home workspace is forever! And always use token-efficient transfer methods.
+**Workflow:**
+1. Create feature branch in home workspace
+2. Create task with feature branch parameter
+3. Task workspace initializes worktree automatically
+4. Task commits directly to feature branch
+5. Home workspace merges feature branch when complete
+6. Clean up and stop task workspace
+
+This approach eliminates the complexity and inefficiency of manual file transfer while providing all the benefits of standard git workflows.

@@ -51,33 +51,64 @@ Please ask your Coder administrator to create a template with AI task support, o
 
 **Optional:** If the template has configurable parameters, call `coder_template_version_parameters` to show options and gather user preferences.
 
-### Step 2: Create the Task
+### Step 2: Create the Task with Feature Branch
 
-Once the template is confirmed, create the Coder Task.
+Once the template is confirmed, create the Coder Task with a feature branch for git worktree.
 
 **Actions:**
-1. Call `coder_create_task` with:
-   - `input`: A concise description of the work to be done (this appears in the Coder Tasks UI)
+1. Generate a unique feature branch name based on the task description
+2. Create the feature branch in the home workspace
+3. Call `coder_create_task` with:
+   - `input`: A concise description of the work to be done
    - `template_version_id`: The `ActiveVersionID` from the confirmed template
-   - Optional: `rich_parameter_values` if the template requires parameters
+   - `rich_parameter_values`: Include feature branch and home workspace information
+
+**Feature branch naming:**
+```python
+# Generate descriptive branch name
+task_slug = task_description.lower().replace(" ", "-")[:30]
+feature_branch = f"feature/{task_slug}"
+
+# Or with timestamp for uniqueness
+feature_branch = f"feature/{task_slug}-{int(time.time())}"
+```
+
+**Create feature branch in home workspace:**
+```python
+coder_workspace_bash(
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/my-project
+        git checkout -b {feature_branch}
+        git push -u origin {feature_branch}
+    """,
+    timeout_ms=15000
+)
+```
+
+**Create task with parameters:**
+```python
+task = coder_create_task(
+    input="Implement user authentication API endpoints",
+    template_version_id="abc123",
+    rich_parameter_values={
+        "feature_branch": feature_branch,
+        "home_workspace": f"{owner}/{workspace_name}",
+        "project_path": "/workspaces/my-project"
+    }
+)
+```
 
 2. After the call succeeds, tell the user:
    ```
-   Task created — you can follow along in the Coder Tasks UI at ${CODER_URL}/tasks
+   Task created on branch {feature_branch} — you can follow along in the Coder Tasks UI at ${CODER_URL}/tasks
    ```
-
-**Example call:**
-```json
-{
-  "input": "Implement user authentication API endpoints",
-  "template_version_id": "abc123"
-}
-```
 
 **What happens:**
 - Coder creates a new task entry in the Tasks UI
 - Coder provisions a workspace based on the template
-- The task status starts as `pending` and transitions to `starting`
+- Task workspace startup script creates git worktree pointing to feature branch
+- Task workspace is ready to work with git directly
 
 ### Step 3: Wait for Workspace to Be Ready
 
@@ -204,119 +235,158 @@ Call `coder_get_task_status` periodically to check:
 
 ## Completing a Task
 
-When all work is done successfully, properly complete the task by transferring work back to the home workspace.
+When all work is done successfully, properly complete the task by merging the feature branch back to the home workspace.
 
-**CRITICAL NEW PATTERN:** The home workspace (where Kiro is running) is the source of truth. Task workspaces are ephemeral. Always transfer work back before stopping.
+**GIT WORKTREE PATTERN:** Task workspaces work on feature branches via git worktrees. Work is shared via standard git operations (commit, push, merge) instead of file copying.
 
-### Step 1: Identify Changed Files
+### Step 1: Commit and Push from Task Workspace
 
-Determine what files were created or modified in the task workspace:
+Ensure all work in the task workspace is committed and pushed to the feature branch:
 
-**Option A: Git-based (recommended if using git):**
-```
+```python
 coder_workspace_bash(
-  workspace="task-workspace-name",
-  command="cd /home/coder/project && git diff --name-only HEAD",
-  timeout_ms=15000
+    workspace=task_workspace,
+    command="""
+        cd /workspaces/task-workspace
+        
+        # Check for uncommitted changes
+        if [ -n "$(git status --porcelain)" ]; then
+            # Commit any remaining changes
+            git add .
+            git commit -m "Complete task: [description]"
+        fi
+        
+        # Push to remote
+        git push origin {feature_branch}
+        
+        # Show final commit
+        git log -1 --oneline
+    """,
+    timeout_ms=30000
 )
 ```
 
-**Option B: Find recently modified files:**
-```
+### Step 2: Merge Feature Branch in Home Workspace
+
+Merge the feature branch to main in the home workspace:
+
+```python
 coder_workspace_bash(
-  workspace="task-workspace-name",
-  command="find /home/coder/project -type f -mmin -60",
-  timeout_ms=15000
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/my-project
+        
+        # Fetch latest changes
+        git fetch origin
+        
+        # Checkout main branch
+        git checkout main
+        
+        # Merge feature branch (no fast-forward to preserve history)
+        git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}: [task description]"
+        
+        # Push to remote
+        git push origin main
+        
+        # Show merge commit
+        git log -1 --oneline
+    """,
+    timeout_ms=30000
 )
 ```
 
-**Option C: List all files (for new projects):**
+### Step 3: Verify Merge
+
+Confirm the merge was successful:
+
+```python
+result = coder_workspace_bash(
+    workspace=home_workspace,
+    command="""
+        cd /workspaces/my-project
+        git log --oneline -5
+    """,
+    timeout_ms=15000
+)
+
+# Check exit code
+if result.exit_code == 0:
+    print(f"✅ Merge successful: {result.stdout}")
+else:
+    print(f"❌ Merge failed: {result.stderr}")
 ```
+
+### Step 4: Clean Up Feature Branch (Optional)
+
+Delete the feature branch after successful merge:
+
+```python
 coder_workspace_bash(
-  workspace="task-workspace-name",
-  command="find /home/coder/project -type f",
-  timeout_ms=15000
-)
-```
-
-### Step 2: Transfer Files to Home Workspace
-
-For each changed file:
-
-1. **Read from task workspace:**
-```
-content = coder_workspace_read_file(
-  workspace="task-workspace-name",
-  path="/home/coder/project/src/feature.go"
-)
-```
-
-2. **Write to home workspace:**
-```
-coder_workspace_write_file(
-  workspace="home-workspace-name",  # Your Kiro workspace
-  path="/home/coder/project/src/feature.go",
-  content=content  # Already base64 encoded from read
-)
-```
-
-3. **Repeat for all changed files**
-
-### Step 3: Verify Transfer
-
-Confirm files were successfully transferred:
-
-```
-coder_workspace_ls(
-  workspace="home-workspace-name",
-  path="/home/coder/project/src"
-)
-```
-
-### Step 4: Commit in Home Workspace (Recommended)
-
-If using git, commit the transferred work:
-
-```
-coder_workspace_bash(
-  workspace="home-workspace-name",
-  command="cd /home/coder/project && git add . && git commit -m 'Task: [description]'",
-  timeout_ms=30000
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/my-project
+        
+        # Delete local branch
+        git branch -d {feature_branch}
+        
+        # Delete remote branch
+        git push origin --delete {feature_branch}
+        
+        # Prune worktree references
+        git worktree prune
+    """,
+    timeout_ms=15000
 )
 ```
 
 ### Step 5: Stop Task Workspace
 
-Only after successful transfer:
+After successful merge:
 
-```
+```python
 coder_create_workspace_build(
-  workspace_id="task-workspace-id",
-  transition="stop"
+    workspace_id=task_workspace_id,
+    transition="stop"
 )
 ```
 
 ### Step 6: Inform User
 
-```
-Inform user: "Work complete. Transferred [N] files to home workspace. Task workspace stopped."
+```python
+print(f"""
+✅ Task complete!
+
+Feature branch: {feature_branch}
+Merged to: main
+Commits: [show commit count]
+Task workspace: stopped
+
+All changes are now in the home workspace on the main branch.
+""")
 ```
 
 **CRITICAL RULES:**
-1. ✅ Always transfer work BEFORE stopping workspace
-2. ✅ Verify transfer succeeded before stopping
-3. ✅ Never stop workspace without transferring work first
-4. ✅ Home workspace is the permanent record
+1. ✅ Always commit and push from task workspace BEFORE merging
+2. ✅ Use `--no-ff` flag to preserve feature branch history
+3. ✅ Verify merge succeeded before stopping workspace
+4. ✅ Home workspace main branch is the permanent record
 
 **Example completion flow:**
 ```
-1. Identify changed files in task workspace
-2. Transfer each file to home workspace
-3. Verify transfer successful
-4. Commit in home workspace (if using git)
-5. coder_create_workspace_build(workspace_id="...", transition="stop")
-6. Inform user: "Work complete. [N] files transferred to home workspace."
+1. Task workspace commits and pushes to feature branch
+2. Home workspace fetches and merges feature branch to main
+3. Verify merge successful
+4. Clean up feature branch (optional)
+5. Stop task workspace
+6. Inform user of completion
 ```
+
+**Benefits of git worktree approach:**
+- ✅ No file copying needed
+- ✅ Minimal token usage (only git commands)
+- ✅ Full git history preserved
+- ✅ Atomic operations
+- ✅ Standard git workflow
 
 **Getting Home Workspace Name:**
 The home workspace is where Kiro is currently running:
