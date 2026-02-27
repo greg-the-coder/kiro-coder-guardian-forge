@@ -1,267 +1,231 @@
 ---
-name: "coder-guardian-forge"
-displayName: "Coder Guardian Forge"
+name: "kiro-coder-guardian-forge"
+displayName: "Kiro Coder Guardian Forge"
 description: "Run Kiro agents in governed Coder workspaces. Creates Agent-Ready Workspaces as Coder Tasks — visible in the Coder Tasks UI — so all agent activity is tracked, auditable, and isolated inside your own infrastructure."
 keywords: ["coder", "workspace", "task", "agent", "guardian", "forge", "regulated", "secure workspace", "remote workspace", "cloud workspace"]
 author: "Coder"
 ---
 
-# Coder Guardian Forge
+# Kiro Coder Guardian Forge
 
 ## Overview
 
-Coder Guardian Forge connects Kiro agents to your Coder deployment, enabling agents to work inside governed, auditable workspaces. Every agent operation runs as a Coder Task — visible in the Coder Tasks UI — so you get full lifecycle tracking, progress reporting, and infrastructure isolation without sacrificing agent autonomy.
+Kiro Coder Guardian Forge connects Kiro agents to your Coder deployment, enabling agents to work inside governed, auditable workspaces. Every agent operation runs as a Coder Task — visible in the Coder Tasks UI — providing full lifecycle tracking, progress reporting, and infrastructure isolation.
 
-This Power uses Coder's remote HTTP MCP server, so there's no CLI to install. Just set two environment variables (`CODER_URL` and `CODER_TOKEN`), and Kiro connects directly to your Coder deployment.
+This Power uses Coder's remote HTTP MCP server with no CLI installation required. The MCP configuration is automatically created by your Coder workspace template using session tokens for secure, zero-configuration setup.
 
-**Key capabilities:**
+**What this power enables:**
 - Create Agent-Ready Workspaces as Coder Tasks with full UI visibility
-- Run commands and edit files inside task workspaces
-- Report progress to the Coder Tasks UI at each step
-- Stop workspaces automatically when work completes or fails
-- All operations are auditable and governed by your Coder policies
+- Execute commands and manage files inside task workspaces
+- Collaborate with workspace agents (Claude Code, Cursor, etc.)
+- Transfer work from ephemeral task workspaces to permanent home workspace
+- Automatic progress reporting to Coder Tasks UI
+- All operations auditable and governed by Coder policies
+
+**Key pattern:** Task workspaces are ephemeral execution environments. Work is performed in task workspaces, then transferred back to your home workspace (where Kiro runs) for permanent storage.
 
 ## Available Steering Files
 
-This power has three steering files for different workflows:
+This power provides three steering files for different workflows. Load them on-demand based on your current task:
 
-- **task-workflow** - Creating and monitoring Coder Tasks (load when starting new work)
-- **workspace-ops** - Running commands and editing files inside workspaces (load when doing actual work)
-- **agent-interaction** - Collaborating with AI agents inside task workspaces (load when delegating work to workspace agents)
+- **task-workflow.md** - Creating and monitoring Coder Tasks with work transfer patterns
+- **workspace-ops.md** - Running commands and managing files inside workspaces  
+- **agent-interaction.md** - Collaborating with AI agents inside task workspaces
 
-Call action "readSteering" to access specific workflows as needed.
+**When to load:**
+- Starting new work or creating a task → `task-workflow.md`
+- Executing commands or file operations → `workspace-ops.md`
+- Delegating to workspace agents (Claude Code, Cursor) → `agent-interaction.md`
 
-## When to Load Steering Files
-
-- Creating a new task or starting work on something → `steering/task-workflow.md`
-- Running commands, reading or writing files inside a workspace → `steering/workspace-ops.md`
-- Sending prompts to or monitoring workspace agents (Claude Code, Cursor, etc.) → `steering/agent-interaction.md`
+**How to load:**
+```
+Call action "readSteering" with powerName="kiro-coder-guardian-forge", steeringFile="task-workflow.md"
+```
 
 ## Onboarding
 
 ### Prerequisites
 
-**For Coder Administrators:**
-- Coder server must be started with the `mcp-server-http` experiment enabled:
+**Coder Administrators:**
+- Coder server with `mcp-server-http` experiment enabled:
   ```bash
-  CODER_EXPERIMENTS="oauth2,mcp-server-http" coder server
+  CODER_EXPERIMENTS="mcp-server-http" coder server
   ```
-- Workspace template configured with automatic MCP setup (see below)
+- Workspace template with automatic MCP configuration (see Configuration section)
 - At least one additional workspace template for creating tasks
 
-**For Developers:**
-- Access to a Coder workspace created from a template with MCP configuration
-- **No manual setup required** - MCP is configured automatically when workspace starts
+**Developers:**
+- Access to a Coder workspace with MCP configuration
+- No manual setup required when template is properly configured
 
-### Expected Setup: Template-Based Configuration
+### Installation
 
-**This power assumes your Coder workspace template includes automatic MCP configuration.** When your workspace starts, the MCP configuration is created automatically.
+**Step 1: Verify Template Configuration**
 
-**For Coder administrators:** Add this to your workspace template's agent startup script:
-
-```hcl
-resource "coder_agent" "dev" {
-  # ... your existing agent config ...
-  
-  startup_script = <<-EOT
-    #!/bin/bash
-    
-    # Your existing startup commands...
-    
-    # ============================================
-    # Kiro Coder Guardian Forge MCP Configuration
-    # ============================================
-    
-    echo "🔧 Configuring Kiro MCP for Coder..."
-    
-    # Create Kiro settings directory
-    mkdir -p ~/.kiro/settings
-    
-    # Create MCP configuration with environment variables
-    cat > ~/.kiro/settings/mcp.json << 'MCPEOF'
-{
-  "mcpServers": {
-    "coder": {
-      "url": "$${CODER_URL}api/experimental/mcp/http",
-      "headers": {
-        "Authorization": "Bearer $${CODER_SESSION_TOKEN}"
-      },
-      "autoApprove": [
-        "coder_workspace_edit_file",
-        "coder_workspace_read_file",
-        "coder_get_task_status",
-        "coder_workspace_write_file",
-        "coder_workspace_ls",
-        "coder_workspace_bash",
-        "coder_get_task_logs",
-        "coder_list_templates",
-        "coder_create_task"
-      ]
-    }
-  }
-}
-MCPEOF
-    
-    # Substitute actual environment variable values
-    sed -i "s|\$${CODER_URL}|$${CODER_URL}|g" ~/.kiro/settings/mcp.json
-    sed -i "s|\$${CODER_SESSION_TOKEN}|$${CODER_SESSION_TOKEN}|g" ~/.kiro/settings/mcp.json
-    
-    echo "✅ Kiro MCP configuration created at ~/.kiro/settings/mcp.json"
-    
-    # Your remaining startup commands...
-  EOT
-}
-```
-
-**See `coder-template-example.tf` in this power for a complete example.**
-
-**This is the expected setup method.** Developers should not need to configure anything manually.
-
-### Verifying Configuration
-
-When your workspace starts, verify the MCP configuration was created:
-
-**Step 1: Check configuration file exists**
-
+Check if your workspace has MCP configuration:
 ```bash
 cat ~/.kiro/settings/mcp.json
 ```
 
-You should see the Coder MCP server configuration with your actual URL and session token.
+If the file exists with Coder MCP server configuration, you're ready to go.
 
-**Step 2: Verify Kiro connection**
+**Step 2: Verify Connection**
 
 In Kiro:
-1. Check the MCP Servers panel - you should see "coder" server connected
-2. Test the connection by calling `coder_get_authenticated_user`
+1. Check MCP Servers panel - look for "coder" server
+2. Server should show as connected
+3. Test with: Call `coder_get_authenticated_user` tool
 
-**If configuration is missing:** Your workspace template may not include the MCP setup. Contact your Coder administrator or use the manual setup fallback below.
+**Step 3: Start Using**
 
-### Fallback: Manual Setup (If Template Not Configured)
-
-**Only use this if your workspace template doesn't include automatic MCP configuration.**
-
-**Step 1: Run the setup script**
-
-```bash
-bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
+You're ready! Create your first task:
+```
+Load task-workflow.md steering file and create a Coder task
 ```
 
-**Step 2: Restart Kiro**
+### Fallback: Manual Setup
 
-Reload the Kiro window or restart the Kiro process.
+If your workspace template doesn't include MCP configuration:
 
-**Step 3: Verify connection**
+```bash
+# Run the setup script
+bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 
-Check the MCP Servers panel in Kiro - you should see the "coder" server connected.
+# Restart Kiro to connect
+```
 
-### Why Template-Based Configuration?
+The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and session token.
 
-This power expects template-based MCP configuration because:
+## Configuration
 
-- ✅ **Zero configuration for developers** - Works immediately when workspace starts
-- ✅ **Consistent setup** - All developers get the same configuration
-- ✅ **Automatic updates** - Configuration refreshes on workspace restart
-- ✅ **Secure** - Uses session tokens, no manual token management
-- ✅ **Scalable** - Works for entire organization without individual setup
+### MCP Server Setup
 
-### Why Session Tokens?
-
-The template-based configuration uses `CODER_SESSION_TOKEN` (automatically available in Coder workspaces) instead of personal API tokens because:
-
-- ✅ **Higher rate limits** - No 429 errors during normal use
-- ✅ **Automatically managed** - Rotated by Coder, no manual token generation
-- ✅ **Secure** - Scoped to the current user session
-- ✅ **Zero configuration** - Already injected into workspace environment
-
-## MCP Server Configuration
-
-This Power connects to Coder's remote HTTP MCP server at:
+This power connects to Coder's remote HTTP MCP server at:
 ```
 ${CODER_URL}/api/experimental/mcp/http
 ```
 
-**Expected Configuration Method: Template-Based**
+**Automatic Configuration (Recommended):**
 
-The MCP server configuration should be created automatically by your Coder workspace template when the workspace starts. This is the recommended and expected setup method.
+The MCP configuration is created automatically by your Coder workspace template's startup script. The configuration file is created at `~/.kiro/settings/mcp.json` when your workspace starts.
 
-**Configuration file location:**
+**Template Configuration Example:**
+
+See `coder-template-example.tf` in this power directory for a complete Terraform template example that includes automatic MCP setup.
+
+**Key configuration details:**
+- Uses `CODER_SESSION_TOKEN` for authentication (automatically available in workspaces)
+- No personal API tokens needed
+- Configuration refreshes on workspace restart
+- Higher rate limits than personal tokens
+
+**Manual Configuration (Fallback):**
+
+If your template doesn't include MCP setup, run:
+```bash
+bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 ```
-~/.kiro/settings/mcp.json
-```
 
-This file is created automatically by the template's startup script and contains your actual Coder URL and session token. It should not be committed to version control.
+Then restart Kiro to connect.
 
-**Why remote HTTP MCP server:**
+### Why Session Tokens?
+
+Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens because:
+- Higher rate limits (no 429 errors)
+- Automatically managed and rotated by Coder
+- Scoped to current user session
+- Zero manual configuration needed
+
+### Why Remote HTTP MCP?
+
 - No Coder CLI installation required
-- No `coder login` or local session management
+- No `coder login` or local session management  
 - Works seamlessly inside Coder workspaces
 - Token-based auth is explicit and auditable
-- Session tokens are automatically rotated by Coder
 
-**If configuration is missing:**
-Your workspace template may not include the MCP setup. Contact your Coder administrator to add the configuration to the template, or use the `setup.sh` script as a fallback.
+## Available MCP Tools
 
-## Key Coder MCP Tools
+### Task Management
 
 | Tool | Purpose |
-|---|---|
-| `coder_get_authenticated_user` | Verify connection and show current user |
-| `coder_list_templates` | Show available workspace templates |
-| `coder_list_template_version_parameters` | Show template configuration options |
-| `coder_create_task` | **Primary tool** — creates Coder Task with workspace |
-| `coder_get_task_status` | Monitor task status (read-only, set by workspace agent) |
-| `coder_get_task_logs` | Get workspace logs including agent activity and responses |
-| `coder_list_tasks` | Find existing running tasks |
-| `coder_send_task_input` | Send prompts/instructions to workspace agent (Claude Code, Cursor, etc.) |
+|------|---------|
+| `coder_create_task` | Create Agent-Ready Workspace as Coder Task (primary tool) |
+| `coder_get_task_status` | Monitor task status (set by workspace agent) |
+| `coder_get_task_logs` | Get workspace logs and agent activity |
+| `coder_send_task_input` | Send prompts to workspace agent (Claude Code, Cursor) |
+| `coder_list_tasks` | Find existing tasks |
 | `coder_delete_task` | Clean up completed tasks |
-| `coder_list_workspaces` | Look up workspace details |
-| `coder_workspace_bash` | Run commands inside workspace |
-| `coder_workspace_ls` | List directory contents |
+
+### Workspace Operations
+
+| Tool | Purpose |
+|------|---------|
+| `coder_workspace_bash` | Execute commands in workspace |
 | `coder_workspace_read_file` | Read file contents |
 | `coder_workspace_write_file` | Write new file (base64-encoded) |
-| `coder_workspace_edit_file` | Edit existing file with search/replace |
-| `coder_workspace_edit_files` | Edit multiple files at once |
+| `coder_workspace_edit_file` | Edit file with search/replace |
+| `coder_workspace_edit_files` | Edit multiple files atomically |
+| `coder_workspace_ls` | List directory contents |
 | `coder_workspace_list_apps` | Get URLs of running apps |
-| `coder_workspace_port_forward` | Access ports not exposed as apps |
-| `coder_create_workspace_build` | Stop workspace after completion |
+| `coder_workspace_port_forward` | Access non-exposed ports |
+| `coder_create_workspace_build` | Stop workspace (transition=stop) |
 
-**Note:** Task state (working, idle, failure) is managed by the agent running inside the workspace, not externally. Use `coder_get_task_status` to monitor the current state.
+### Discovery & Configuration
 
-**Agent Interaction:** Use `coder_send_task_input` to send prompts to workspace agents (Claude Code, Cursor, etc.) and `coder_get_task_logs` to see their responses. This enables collaboration between external Kiro agents and workspace agents.
+| Tool | Purpose |
+|------|---------|
+| `coder_get_authenticated_user` | Verify connection and current user |
+| `coder_list_templates` | Show available workspace templates |
+| `coder_template_version_parameters` | Show template configuration options |
+| `coder_list_workspaces` | Look up workspace details |
+
+**Note:** Task state (working, idle, failure) is managed by the agent inside the workspace, not externally. External agents monitor state via `coder_get_task_status`.
 
 ## Best Practices
 
-- Always create tasks with `coder_create_task`, never use `coder_create_workspace` directly
-- Wait for task workspace to be running before executing commands or file operations
-- Monitor task status with `coder_get_task_status` to track workspace agent progress
-- Use `coder_send_task_input` to delegate work to workspace agents (Claude Code, Cursor, etc.)
-- Check `coder_get_task_logs` to see workspace agent responses and activity
-- **CRITICAL: Transfer work from task workspace to home workspace before stopping** (see below)
-- Always stop workspaces after work is complete to free resources
+### Task Workflow
+- Always create tasks with `coder_create_task` (never `coder_create_workspace`)
+- Wait for task workspace to reach "running" status before operations
+- Monitor task status with `coder_get_task_status`
+- Always stop workspaces after completion to free resources
+
+### Work Transfer (Critical)
+- **Home workspace is the source of truth** - where Kiro runs
+- **Task workspaces are ephemeral** - temporary execution environments
+- **Always transfer work before stopping** task workspace
+- Use token-efficient methods: git patches or bash direct transfer
+- Transfer at checkpoints for long tasks
+- See `WORK-TRANSFER-PATTERN.md` for complete implementation
+
+### Workspace Operations
 - Use dedicated file tools instead of bash `cat`/`echo`/`heredoc`
-- Set appropriate timeouts for `coder_workspace_bash` based on operation type
+- Set appropriate timeouts for `coder_workspace_bash` based on operation
+- Verify operations succeeded before proceeding
 
-**Work Transfer Pattern (NEW):**
+### Agent Collaboration
+- Use `coder_send_task_input` to delegate work to workspace agents
+- Monitor progress with `coder_get_task_logs`
+- Four patterns: Orchestrator, Delegator, Hybrid, Iterative
+- See `steering/agent-interaction.md` for detailed patterns
 
-The home workspace (where Kiro is running) is the permanent source of truth. Task workspaces are ephemeral execution environments. Always transfer work back to the home workspace before stopping:
+## Work Transfer Pattern
 
-1. **Identify changed files** in task workspace (use git diff or find)
-2. **Read files** from task workspace using `coder_workspace_read_file`
-3. **Write files** to home workspace using `coder_workspace_write_file`
-4. **Verify transfer** succeeded
-5. **Commit in home workspace** (if using git)
-6. **Then stop** task workspace
+**Critical concept:** Task workspaces are ephemeral. Always transfer work to home workspace before stopping.
 
-**For long tasks:** Transfer at checkpoints (end of phases, before breaks) to avoid losing progress if something fails.
+**Transfer workflow:**
+1. Identify changed files in task workspace
+2. Read files from task workspace
+3. Write files to home workspace
+4. Verify transfer succeeded
+5. Commit in home workspace (if using git)
+6. Stop task workspace
 
-**See `WORK-TRANSFER-PATTERN.md` for complete implementation details.**
+**Token-efficient methods:**
+- **Git patch** (recommended): Only transfers diffs, minimal tokens
+- **Bash direct**: Zero tokens for file content
+- Avoid reading large files into agent context
 
-**Collaboration Patterns:**
-- **Orchestrator:** You coordinate, workspace agent implements specific tasks
-- **Delegator:** Send comprehensive prompt, workspace agent does most work
-- **Hybrid:** You handle infrastructure, workspace agent handles business logic
-- **Iterative:** You and workspace agent refine work together in iterations
+**See `WORK-TRANSFER-PATTERN.md` for complete implementation with code examples.**
 
 ## Troubleshooting
 
@@ -270,154 +234,95 @@ The home workspace (where Kiro is running) is the permanent source of truth. Tas
 **Problem:** "Failed to connect to Coder MCP server"
 
 **Solutions:**
-1. Verify you're running inside a Coder workspace: `echo $CODER_URL`
-2. Check session token is available: `echo ${CODER_SESSION_TOKEN:0:10}...`
-3. Run the setup script: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
-4. Restart Kiro to reconnect
-5. Confirm admin enabled `mcp-server-http` experiment on server
+1. Verify running in Coder workspace: `echo $CODER_URL`
+2. Check session token available: `echo ${CODER_SESSION_TOKEN:0:10}...`
+3. Run setup script: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+4. Restart Kiro
+5. Confirm admin enabled `mcp-server-http` experiment
 
 **Problem:** "Unauthorized" or "Invalid token"
 
 **Solutions:**
-1. Session token may have expired - restart your workspace
-2. Run setup script again to get fresh token: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
-3. Restart Kiro to pick up new configuration
+1. Session token may have expired - restart workspace
+2. Run setup script to get fresh token
+3. Restart Kiro
 
 **Problem:** MCP server not listed in Kiro
 
 **Solutions:**
-1. Check if config file exists: `cat ~/.kiro/settings/mcp.json`
-2. If missing, run setup script: `bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh`
+1. Check config exists: `cat ~/.kiro/settings/mcp.json`
+2. Run setup script if missing
 3. Verify config has actual values (not `${VAR}` placeholders)
-4. Restart Kiro to load the configuration
+4. Restart Kiro
 
-**Problem:** Rate limiting (429 errors)
+### Rate Limiting
 
-**Cause:** Too many connection attempts in a short time
+**Problem:** 429 errors
+
+**Cause:** Too many requests
 
 **Solutions:**
-1. Wait 5-10 minutes for rate limit to reset
-2. Verify you're using session token (not personal API token)
-3. Check Coder server logs for rate limit configuration
-4. Contact Coder admin to increase MCP endpoint rate limits
+1. Wait 5-10 minutes for rate limit reset
+2. Verify using session token (not personal API token)
+3. Contact Coder admin about rate limit configuration
 
 ### Common Error Codes
 
-**401 Unauthorized**
-- Session token expired or invalid
-- Solution: Restart workspace to get fresh token, then run setup.sh
+| Code | Meaning | Solution |
+|------|---------|----------|
+| 401 | Unauthorized | Session token expired - restart workspace, run setup.sh |
+| 403 | Forbidden | Check Coder RBAC permissions |
+| 404 | Not Found | Verify workspace name format: `owner/workspace-name` |
+| 429 | Rate Limited | Wait 5-10 minutes, ensure using session token |
+| 502/503 | Server Issue | Check Coder server health, verify experiment enabled |
 
-**403 Forbidden**
-- User doesn't have permission for the operation
-- Solution: Check Coder RBAC settings for your user role
-
-**404 Not Found**
-- Workspace or task doesn't exist
-- Solution: Verify workspace name format: `owner/workspace-name`
-- Use `coder_list_workspaces` to find correct workspace name
-
-**429 Too Many Requests**
-- Rate limit exceeded
-- Solution: Wait 5-10 minutes, ensure using session token (not personal API token)
-- Check with Coder admin about rate limit configuration
-
-**502/503 Bad Gateway/Service Unavailable**
-- Coder server or proxy issue
-- Solution: Check Coder server health, verify `mcp-server-http` experiment enabled
-- If using CloudFront or other CDN, check CDN health
-- Review Coder server logs for errors
-
-### Task Creation Issues
+### Task Issues
 
 **Problem:** "No templates available"
 
-**Solutions:**
-1. Ask your Coder admin to create at least one workspace template
-2. Verify you have permission to use templates: check Coder web UI → Templates
-3. Try listing templates manually: call `coder_list_templates`
+**Solution:** Ask Coder admin to create workspace templates
 
-**Problem:** "Task stuck in pending/starting state"
+**Problem:** "Task stuck in pending/starting"
 
 **Solutions:**
-1. Check Coder server logs for provisioning errors
-2. Verify template is configured correctly
-3. Check workspace resource quotas and limits
-4. Wait up to 5 minutes for initial provisioning
-5. If still stuck, report failure and delete the task
-
-### Workspace Operation Issues
+1. Wait up to 5 minutes for provisioning
+2. Check Coder server logs
+3. Verify template configured correctly
+4. Check resource quotas
 
 **Problem:** "Workspace not found"
 
 **Solutions:**
-1. Verify workspace name format: `owner/workspace-name`
-2. Get correct name from `coder_get_task_logs` after task creation
-3. Check workspace still exists: call `coder_list_workspaces`
-4. Ensure task workspace is running: call `coder_get_task_status`
+1. Verify format: `owner/workspace-name`
+2. Get name from `coder_get_task_logs` after creation
+3. Check workspace exists: `coder_list_workspaces`
 
-**Problem:** "Command timeout"
+### Quick Health Check
 
-**Solutions:**
-1. Increase `timeout_ms` for long-running operations
-2. Use `background: true` for processes that don't need to complete immediately
-3. Check workspace is responsive: try simple command like `pwd`
-4. Review workspace logs in Coder UI for errors
-
-### Connection Health Check
-
-**Quick Test:**
+**Test connection:**
 ```bash
-# Test authentication
 curl -s -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
   "${CODER_URL}api/v2/users/me" | jq -r '.username'
-# Should output: your-username
-```
-
-**Full Diagnostic:**
-```bash
-# 1. Check environment
-env | grep CODER_
-
-# 2. Check config
-cat ~/.kiro/settings/mcp.json
-
-# 3. Test API
-curl -s -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
-  "${CODER_URL}api/v2/users/me"
-
-# 4. Test MCP endpoint
-curl -s -X POST \
-  -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
-  -H "Content-Type: application/json" \
-  "${CODER_URL}api/experimental/mcp/http" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 ```
 
 **In Kiro:**
 1. Call `coder_get_authenticated_user` → Verify auth
 2. Call `coder_list_templates` → Verify API access
 3. Call `coder_list_workspaces` → Verify workspace access
-4. Call `coder_list_tasks` → Verify task access
 
-All should succeed. If any fail, check specific permissions.
+## Additional Resources
 
-## Configuration
-
-**Template-based configuration (recommended):**
-- Add MCP config generation to your Coder workspace template
-- See `coder-template-example.tf` for implementation
-- Developers get automatic zero-configuration setup
-
-**Manual configuration (fallback):**
-- Run `setup.sh` script in the power directory
-- Configuration created at `~/.kiro/settings/mcp.json`
-- Restart Kiro to connect
-
-**No additional configuration required** after setup - the MCP server connects automatically when Kiro starts.
+- **QUICK-START.md** - 5-minute quick start guide
+- **WORK-TRANSFER-PATTERN.md** - Complete work transfer implementation
+- **coder-template-example.tf** - Template configuration example
+- **steering/task-workflow.md** - Task creation and monitoring
+- **steering/workspace-ops.md** - Workspace operations
+- **steering/agent-interaction.md** - Agent collaboration patterns
+- **CHANGELOG.md** - Version history
 
 ---
 
-**MCP Server:** coder (remote HTTP)
-**Endpoint:** `${CODER_URL}/api/experimental/mcp/http`
-**Authentication:** Bearer token via `CODER_SESSION_TOKEN`
-**Configuration:** Template-based (see `setup.sh` or `coder-template-example.tf`)
+**MCP Server:** coder (remote HTTP)  
+**Endpoint:** `${CODER_URL}/api/experimental/mcp/http`  
+**Authentication:** Bearer token via `CODER_SESSION_TOKEN`  
+**Configuration:** Template-based automatic setup (see `coder-template-example.tf`)
