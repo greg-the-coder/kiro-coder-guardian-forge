@@ -33,9 +33,9 @@ This power enables four collaboration patterns between external Kiro agents and 
 
 ## Quick Start
 
-### For Coder Administrators (Recommended)
+### For Coder Administrators (One-Time Setup)
 
-Add automatic MCP configuration to your workspace template:
+**This power expects template-based MCP configuration.** Add this to your workspace template:
 
 ```hcl
 resource "coder_agent" "dev" {
@@ -65,9 +65,16 @@ MCPEOF
 
 See `coder-template-example.tf` for complete example.
 
-### For Developers (Manual Setup)
+### For Developers (Zero Configuration)
 
-If your admin hasn't configured automatic setup:
+**If your workspace template includes MCP configuration (expected):**
+
+1. Start your Coder workspace (MCP configured automatically)
+2. Open Kiro
+3. Verify "coder" MCP server is connected in MCP Servers panel
+4. Start creating tasks!
+
+**If your template doesn't include MCP configuration (fallback):**
 
 ```bash
 # Run the setup script
@@ -91,24 +98,32 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 ## Prerequisites
 
 - Coder deployment with `mcp-server-http` experiment enabled
-- Running inside a Coder workspace (for automatic session token)
-- At least one workspace template configured
+- Workspace template configured with automatic MCP setup (see Quick Start)
+- At least one additional workspace template for creating tasks
 
 ## Configuration
 
-**Template-based (recommended):** Zero configuration for developers when admin adds setup to template
+**Expected: Template-based (zero configuration for developers)**
 
-**Manual (fallback):** Run `setup.sh` script and restart Kiro
+When your workspace template includes the MCP configuration, developers get automatic setup with no manual steps required.
 
-**No personal API tokens needed** - uses `CODER_SESSION_TOKEN` automatically available in workspaces
+**Fallback: Manual setup script**
+
+If your template doesn't include MCP configuration, developers can run:
+```bash
+bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
+```
+
+**No personal API tokens needed** - uses `CODER_SESSION_TOKEN` automatically available in workspaces.
 
 ## Status
 
-✅ Production ready with template-based configuration
-✅ Zero-configuration setup for developers
-✅ Uses secure session tokens (no personal API tokens)
-✅ Tested and stable MCP connection
-✅ Agent interaction patterns documented
+✅ Production ready with template-based configuration  
+✅ Zero-configuration setup for developers (when template configured)  
+✅ Uses secure session tokens (no personal API tokens)  
+✅ Tested and stable MCP connection  
+✅ Agent interaction patterns documented  
+✅ Token-efficient work transfer methods  
 
 ## License
 

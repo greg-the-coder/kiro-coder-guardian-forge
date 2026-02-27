@@ -46,19 +46,18 @@ Call action "readSteering" to access specific workflows as needed.
   ```bash
   CODER_EXPERIMENTS="oauth2,mcp-server-http" coder server
   ```
-- At least one workspace template configured
+- Workspace template configured with automatic MCP setup (see below)
+- At least one additional workspace template for creating tasks
 
 **For Developers:**
-- Access to a Coder workspace (the power works inside Coder workspaces)
-- No manual configuration needed if admin has set up the template (see below)
+- Access to a Coder workspace created from a template with MCP configuration
+- **No manual setup required** - MCP is configured automatically when workspace starts
 
-### Setup Options
+### Expected Setup: Template-Based Configuration
 
-#### Option A: Automatic Setup (Recommended for Admins)
+**This power assumes your Coder workspace template includes automatic MCP configuration.** When your workspace starts, the MCP configuration is created automatically.
 
-**For Coder administrators:** Add automatic MCP configuration to your workspace templates so developers get zero-configuration setup.
-
-Add this to your Coder workspace template's agent startup script:
+**For Coder administrators:** Add this to your workspace template's agent startup script:
 
 ```hcl
 resource "coder_agent" "dev" {
@@ -116,45 +115,59 @@ MCPEOF
 
 **See `coder-template-example.tf` in this power for a complete example.**
 
-**Benefits:**
-- ✅ Zero configuration for developers
-- ✅ Works automatically in every workspace
-- ✅ Uses secure session tokens (no personal API tokens needed)
-- ✅ Credentials never committed to version control
-- ✅ Automatically updated when workspace restarts
+**This is the expected setup method.** Developers should not need to configure anything manually.
 
-#### Option B: Manual Setup (For Developers)
+### Verifying Configuration
 
-If your Coder admin hasn't configured automatic setup, you can configure manually:
+When your workspace starts, verify the MCP configuration was created:
+
+**Step 1: Check configuration file exists**
+
+```bash
+cat ~/.kiro/settings/mcp.json
+```
+
+You should see the Coder MCP server configuration with your actual URL and session token.
+
+**Step 2: Verify Kiro connection**
+
+In Kiro:
+1. Check the MCP Servers panel - you should see "coder" server connected
+2. Test the connection by calling `coder_get_authenticated_user`
+
+**If configuration is missing:** Your workspace template may not include the MCP setup. Contact your Coder administrator or use the manual setup fallback below.
+
+### Fallback: Manual Setup (If Template Not Configured)
+
+**Only use this if your workspace template doesn't include automatic MCP configuration.**
 
 **Step 1: Run the setup script**
-
-This power includes a setup script that automatically configures the MCP server:
 
 ```bash
 bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 ```
 
-The script will:
-- Detect your Coder workspace environment
-- Create the MCP configuration using `CODER_SESSION_TOKEN`
-- Configure auto-approval for common tools
-
 **Step 2: Restart Kiro**
 
-After running the setup script, restart Kiro to connect to the Coder MCP server:
-- Reload the Kiro window, or
-- Restart the Kiro process
+Reload the Kiro window or restart the Kiro process.
 
 **Step 3: Verify connection**
 
 Check the MCP Servers panel in Kiro - you should see the "coder" server connected.
 
-Test the connection by calling `coder_get_authenticated_user` to verify you're authenticated.
+### Why Template-Based Configuration?
+
+This power expects template-based MCP configuration because:
+
+- ✅ **Zero configuration for developers** - Works immediately when workspace starts
+- ✅ **Consistent setup** - All developers get the same configuration
+- ✅ **Automatic updates** - Configuration refreshes on workspace restart
+- ✅ **Secure** - Uses session tokens, no manual token management
+- ✅ **Scalable** - Works for entire organization without individual setup
 
 ### Why Session Tokens?
 
-This power uses `CODER_SESSION_TOKEN` (automatically available in Coder workspaces) instead of personal API tokens because:
+The template-based configuration uses `CODER_SESSION_TOKEN` (automatically available in Coder workspaces) instead of personal API tokens because:
 
 - ✅ **Higher rate limits** - No 429 errors during normal use
 - ✅ **Automatically managed** - Rotated by Coder, no manual token generation
@@ -168,7 +181,16 @@ This Power connects to Coder's remote HTTP MCP server at:
 ${CODER_URL}/api/experimental/mcp/http
 ```
 
-**Configuration is template-based** - the MCP server configuration is created automatically when your workspace starts (if your admin has configured the template) or via the `setup.sh` script.
+**Expected Configuration Method: Template-Based**
+
+The MCP server configuration should be created automatically by your Coder workspace template when the workspace starts. This is the recommended and expected setup method.
+
+**Configuration file location:**
+```
+~/.kiro/settings/mcp.json
+```
+
+This file is created automatically by the template's startup script and contains your actual Coder URL and session token. It should not be committed to version control.
 
 **Why remote HTTP MCP server:**
 - No Coder CLI installation required
@@ -177,12 +199,8 @@ ${CODER_URL}/api/experimental/mcp/http
 - Token-based auth is explicit and auditable
 - Session tokens are automatically rotated by Coder
 
-**Configuration file location:**
-```
-~/.kiro/settings/mcp.json
-```
-
-This file is created automatically and contains your actual Coder URL and session token. It should not be committed to version control.
+**If configuration is missing:**
+Your workspace template may not include the MCP setup. Contact your Coder administrator to add the configuration to the template, or use the `setup.sh` script as a fallback.
 
 ## Key Coder MCP Tools
 

@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-02-27 - Template-Based Configuration Assumption (v2.2.2)
+
+### Documentation Update
+
+**Updated power documentation to assume template-based MCP configuration is the expected setup method.**
+
+### Changed
+
+**POWER.md:**
+- Reordered onboarding to emphasize template-based configuration as expected
+- Moved manual setup to "Fallback" section
+- Added "Why Template-Based Configuration?" section
+- Added verification steps for developers
+- Clarified that manual setup is only for fallback scenarios
+
+**README.md:**
+- Updated "Quick Start" to emphasize template-based setup
+- Changed "For Developers" section to "Zero Configuration"
+- Clarified that manual setup is fallback only
+- Updated prerequisites to mention template configuration
+
+**Status:**
+- Template-based configuration is now the expected and documented method
+- Manual setup script (`setup.sh`) remains available as fallback
+- No functional changes - only documentation emphasis
+
+### Rationale
+
+Template-based configuration provides:
+- ✅ Zero configuration for developers
+- ✅ Consistent setup across organization
+- ✅ Automatic updates on workspace restart
+- ✅ No manual token management
+- ✅ Better security (session tokens)
+
+The power now clearly communicates that:
+1. **Expected:** Template includes MCP configuration
+2. **Fallback:** Manual setup script if template not configured
+3. **Goal:** Zero-configuration experience for developers
+
+---
+
 ## 2026-02-27 - Token Efficiency Optimization (v2.2.1)
 
 ### Critical Optimization
