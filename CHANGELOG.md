@@ -1,5 +1,316 @@
 # Changelog
 
+## 2026-02-27 - Token Efficiency Optimization (v2.2.1)
+
+### Critical Optimization
+
+**Optimized work transfer methods to minimize token usage and prevent context window overflow.**
+
+### Problem Identified
+
+The initial work transfer implementation (v2.2.0) read file contents into agent context, which could:
+- Consume excessive tokens (100KB - 10MB+ per transfer)
+- Exceed context window limits
+- Increase costs significantly
+- Cause transfer failures for large projects
+
+### Solution Implemented
+
+**Introduced token-efficient transfer methods that minimize or eliminate file content in agent context.**
+
+### Added
+
+**New Documentation:**
+- `TOKEN-EFFICIENCY-GUIDE.md` - Complete guide for minimizing token usage
+  - Token usage comparison by method
+  - Recommended methods (git patch, bash direct)
+  - Anti-patterns to avoid
+  - Optimization strategies
+  - Monitoring and troubleshooting
+
+**Token-Efficient Transfer Methods:**
+
+1. **Git Patch Transfer (Pattern A - RECOMMENDED)**
+   - Token usage: 1-10KB (only diffs)
+   - Savings: 90-99% vs. file-by-file
+   - Works with unlimited file sizes
+   - Best for: All git projects
+
+2. **Bash Direct Transfer (Pattern B - RECOMMENDED)**
+   - Token usage: ~100 bytes (only bash commands)
+   - Savings: 99.9% vs. file-by-file
+   - Zero file content in context
+   - Best for: Non-git projects, large files
+
+3. **File List Transfer (Pattern C - LIMITED USE)**
+   - Token usage: File size × 1.33 (base64 overhead)
+   - Limit: < 5 files, < 100KB each
+   - Use only when git/bash not available
+
+4. **Full Directory Transfer (Pattern D - DEPRECATED)**
+   - Token usage: All file content
+   - Not recommended for production
+   - Kept for reference only
+
+### Changed
+
+**WORK-TRANSFER-PATTERN.md:**
+- Reordered patterns by token efficiency
+- Added "Token Efficiency Considerations" section
+- Marked inefficient patterns as deprecated
+- Added token usage comparison table
+- Updated example implementation to use git patch method
+- Enhanced best practices with token efficiency guidance
+
+**Best Practices:**
+- Added "Use Token-Efficient Transfer Methods" as #2 priority
+- Added guidance on handling large files
+- Added monitoring token usage recommendations
+- Added batch optimization strategies
+
+### Token Usage Comparison
+
+| Method | Token Usage | Savings | Production Ready |
+|--------|-------------|---------|------------------|
+| Git Patch | 1-10KB | 90-99% | ✅ Yes |
+| Bash Direct | ~100 bytes | 99.9% | ✅ Yes |
+| File List | Moderate | - | ⚠️ Limited |
+| Full Directory | High | - | ❌ No |
+
+### Example Savings
+
+**Scenario:** Transfer 50 files (average 20KB each) = 1MB total
+
+**Old method (file-by-file):**
+- Token usage: 1MB × 1.33 (base64) = 1.33MB
+- Cost: High
+- Risk: Context window overflow
+
+**New method (git patch):**
+- Token usage: ~5KB (only diffs)
+- Cost: Minimal
+- Risk: None
+- **Savings: 99.6%**
+
+### Migration
+
+**Existing workflows should update to use token-efficient methods:**
+
+```python
+# OLD (v2.2.0) - High token usage
+for file in changed_files:
+    content = coder_workspace_read_file(workspace=task_ws, path=file)
+    coder_workspace_write_file(workspace=home_ws, path=file, content=content)
+
+# NEW (v2.2.1) - Minimal token usage
+coder_workspace_bash(
+    workspace=task_ws,
+    command="cd /home/coder/project && git format-patch -1 HEAD --stdout > /tmp/task.patch"
+)
+patch = coder_workspace_read_file(workspace=task_ws, path="/tmp/task.patch")
+coder_workspace_write_file(workspace=home_ws, path="/tmp/task.patch", content=patch)
+coder_workspace_bash(
+    workspace=home_ws,
+    command="cd /home/coder/project && git am /tmp/task.patch"
+)
+```
+
+### Benefits
+
+**Cost Reduction:**
+- ✅ 90-99% reduction in token usage
+- ✅ Significantly lower API costs
+- ✅ Faster transfers
+
+**Reliability:**
+- ✅ No context window overflow
+- ✅ Handles projects of any size
+- ✅ Works with large files
+
+**Performance:**
+- ✅ Single operation vs. multiple file reads
+- ✅ Faster execution
+- ✅ Less API calls
+
+### Recommendations
+
+**For all users:**
+1. Use git patch transfer for git projects (Pattern A)
+2. Use bash direct transfer for non-git projects (Pattern B)
+3. Avoid file-by-file transfer for > 5 files
+4. Never read files > 100KB into agent context
+5. Monitor token usage in production
+
+**For large projects:**
+1. Always use git patch or bash direct
+2. Never use file list or full directory methods
+3. Set up .gitignore to exclude unnecessary files
+4. Transfer at logical checkpoints, not time-based
+
+### Documentation
+
+Complete details in:
+- `TOKEN-EFFICIENCY-GUIDE.md` - Comprehensive token optimization guide
+- `WORK-TRANSFER-PATTERN.md` - Updated with token-efficient patterns
+- `MIGRATION-TO-WORK-TRANSFER.md` - Migration examples
+
+---
+
+## 2026-02-27 - Work Transfer Pattern (v2.2.0) - BREAKING CHANGE
+
+### Major Architectural Change
+
+**Introduced fundamental work transfer pattern:** Task workspaces are now ephemeral execution environments. The home workspace (where Kiro runs) is the permanent source of truth.
+
+**Key Concept:**
+- **Home Workspace:** Where Kiro runs - permanent storage, source of truth
+- **Task Workspace:** Ephemeral - work is performed here then transferred back
+- **Pattern:** Create task → Do work → Transfer to home → Stop task workspace
+
+### Added
+
+**New Documentation:**
+- `WORK-TRANSFER-PATTERN.md` - Complete 500+ line guide for work transfer
+  - Architecture and data flow diagrams
+  - Transfer points (completion, checkpoints, failure recovery)
+  - Step-by-step transfer workflow
+  - Four implementation patterns (full directory, git-based, selective, tar-based)
+  - Best practices and error handling
+  - Integration with task workflow
+  - Complete example implementations
+
+**Transfer Workflow:**
+1. Identify changed files in task workspace
+2. Read files from task workspace
+3. Write files to home workspace
+4. Verify transfer successful
+5. Commit in home workspace (if using git)
+6. Stop task workspace
+
+**Checkpoint Pattern:**
+- Transfer work at major milestones during long tasks
+- Prevents data loss if task fails mid-way
+- Enables incremental development with clear history
+- Recommended for multi-phase work
+
+### Changed
+
+**Task Workflow (`steering/task-workflow.md`):**
+- Updated "Completing a Task" section with 6-step transfer process
+- Added "Checkpoint Pattern for Long Tasks" section
+- Updated "Handling Task Failures" to include work salvage
+- Updated task lifecycle summary to include transfer step
+- Updated all common patterns to include transfer
+- Added guidance on getting home workspace name
+
+**Best Practices (`POWER.md`):**
+- Added critical work transfer pattern to best practices
+- Emphasized home workspace as source of truth
+- Added checkpoint guidance for long tasks
+- Referenced WORK-TRANSFER-PATTERN.md for details
+
+**README.md:**
+- Added work transfer pattern to key features
+- Updated "What's Included" to list WORK-TRANSFER-PATTERN.md
+- Highlighted ephemeral nature of task workspaces
+
+### Breaking Change
+
+**Previous behavior:**
+- Work remained in task workspace
+- Stopping workspace could lose work
+- No clear pattern for preserving results
+
+**New behavior:**
+- Work MUST be transferred to home workspace before stopping
+- Task workspaces are ephemeral by design
+- Home workspace is the permanent record
+- Agents must implement transfer logic
+
+**Migration:**
+All workflows must now include transfer step before stopping task workspaces. See `WORK-TRANSFER-PATTERN.md` for implementation details.
+
+### Benefits
+
+**Data Safety:**
+- ✅ No work lost when task workspaces are deleted
+- ✅ Permanent record in home workspace
+- ✅ Checkpoint pattern prevents mid-task data loss
+
+**Clear Architecture:**
+- ✅ Home workspace is single source of truth
+- ✅ Task workspaces are clearly ephemeral
+- ✅ Explicit data flow pattern
+
+**Better Development:**
+- ✅ Easy to track project history in home workspace
+- ✅ Supports incremental development with checkpoints
+- ✅ Clear separation of concerns
+
+**Compliance:**
+- ✅ All work captured in auditable home workspace
+- ✅ Complete history of changes
+- ✅ No data left in ephemeral environments
+
+### Implementation Patterns
+
+**Pattern A: Git-Based Transfer (Recommended)**
+```python
+# Identify changed files
+git diff --name-only HEAD
+
+# Transfer each file
+for file in changed_files:
+    content = read_from_task_workspace(file)
+    write_to_home_workspace(file, content)
+
+# Commit in home workspace
+git commit -m "Task: [description]"
+```
+
+**Pattern B: Checkpoint Transfer**
+```python
+# Phase 1
+do_work()
+transfer_to_home_workspace()
+commit("Phase 1 complete")
+
+# Phase 2
+do_more_work()
+transfer_to_home_workspace()
+commit("Phase 2 complete")
+```
+
+**Pattern C: Failure Recovery**
+```python
+try:
+    do_work()
+    transfer_to_home_workspace()
+except Exception:
+    salvage_partial_work()
+    transfer_what_we_can()
+finally:
+    stop_task_workspace()
+```
+
+### Testing Recommendations
+
+After implementing work transfer:
+- [ ] Verify files transfer correctly from task to home workspace
+- [ ] Test checkpoint pattern with multi-phase work
+- [ ] Test failure recovery and work salvage
+- [ ] Verify git commits in home workspace
+- [ ] Confirm task workspace can be safely deleted after transfer
+
+### Documentation
+
+Complete implementation details in:
+- `WORK-TRANSFER-PATTERN.md` - Architecture and patterns
+- `steering/task-workflow.md` - Integration with task workflow
+- `POWER.md` - Best practices summary
+
+---
+
 ## 2026-02-27 - Usability and Reliability Improvements (v2.1.0)
 
 ### Enhanced

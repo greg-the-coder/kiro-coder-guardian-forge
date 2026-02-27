@@ -189,24 +189,126 @@ Call `coder_get_task_status` periodically to check:
 
 ## Completing a Task
 
-When all work is done successfully, properly complete the task.
+When all work is done successfully, properly complete the task by transferring work back to the home workspace.
 
-**Actions:**
-1. **Stop the workspace:**
-   - Call `coder_create_workspace_build` with:
-     - `workspace_id`: The workspace ID from task creation
-     - `transition=stop`
-   - This gracefully stops the workspace and frees resources
+**CRITICAL NEW PATTERN:** The home workspace (where Kiro is running) is the source of truth. Task workspaces are ephemeral. Always transfer work back before stopping.
 
-2. Inform the user that the work is complete and workspace is stopping
+### Step 1: Identify Changed Files
 
-**CRITICAL:** Always stop the workspace when work is complete to avoid consuming unnecessary resources.
+Determine what files were created or modified in the task workspace:
+
+**Option A: Git-based (recommended if using git):**
+```
+coder_workspace_bash(
+  workspace="task-workspace-name",
+  command="cd /home/coder/project && git diff --name-only HEAD",
+  timeout_ms=15000
+)
+```
+
+**Option B: Find recently modified files:**
+```
+coder_workspace_bash(
+  workspace="task-workspace-name",
+  command="find /home/coder/project -type f -mmin -60",
+  timeout_ms=15000
+)
+```
+
+**Option C: List all files (for new projects):**
+```
+coder_workspace_bash(
+  workspace="task-workspace-name",
+  command="find /home/coder/project -type f",
+  timeout_ms=15000
+)
+```
+
+### Step 2: Transfer Files to Home Workspace
+
+For each changed file:
+
+1. **Read from task workspace:**
+```
+content = coder_workspace_read_file(
+  workspace="task-workspace-name",
+  path="/home/coder/project/src/feature.go"
+)
+```
+
+2. **Write to home workspace:**
+```
+coder_workspace_write_file(
+  workspace="home-workspace-name",  # Your Kiro workspace
+  path="/home/coder/project/src/feature.go",
+  content=content  # Already base64 encoded from read
+)
+```
+
+3. **Repeat for all changed files**
+
+### Step 3: Verify Transfer
+
+Confirm files were successfully transferred:
+
+```
+coder_workspace_ls(
+  workspace="home-workspace-name",
+  path="/home/coder/project/src"
+)
+```
+
+### Step 4: Commit in Home Workspace (Recommended)
+
+If using git, commit the transferred work:
+
+```
+coder_workspace_bash(
+  workspace="home-workspace-name",
+  command="cd /home/coder/project && git add . && git commit -m 'Task: [description]'",
+  timeout_ms=30000
+)
+```
+
+### Step 5: Stop Task Workspace
+
+Only after successful transfer:
+
+```
+coder_create_workspace_build(
+  workspace_id="task-workspace-id",
+  transition="stop"
+)
+```
+
+### Step 6: Inform User
+
+```
+Inform user: "Work complete. Transferred [N] files to home workspace. Task workspace stopped."
+```
+
+**CRITICAL RULES:**
+1. ✅ Always transfer work BEFORE stopping workspace
+2. ✅ Verify transfer succeeded before stopping
+3. ✅ Never stop workspace without transferring work first
+4. ✅ Home workspace is the permanent record
 
 **Example completion flow:**
 ```
-1. coder_create_workspace_build(workspace_id="...", transition="stop")
-2. Inform user: "Work complete. Workspace is stopping."
+1. Identify changed files in task workspace
+2. Transfer each file to home workspace
+3. Verify transfer successful
+4. Commit in home workspace (if using git)
+5. coder_create_workspace_build(workspace_id="...", transition="stop")
+6. Inform user: "Work complete. [N] files transferred to home workspace."
 ```
+
+**Getting Home Workspace Name:**
+The home workspace is where Kiro is currently running:
+```
+HOME_WORKSPACE = f"{CODER_WORKSPACE_OWNER_NAME}/{CODER_WORKSPACE_NAME}"
+```
+These environment variables are automatically available in Coder workspaces.
 
 **Note:** Task state (idle/complete) is managed by the agent inside the workspace. External monitoring can check `coder_get_task_status` to see the final state.
 
@@ -214,7 +316,7 @@ When all work is done successfully, properly complete the task.
 
 ## Handling Task Failures
 
-If something goes wrong and the work cannot be completed, properly handle the failure.
+If something goes wrong and the work cannot be completed, properly handle the failure while attempting to salvage any work.
 
 **When to handle failure:**
 - Workspace provisioning fails or times out
@@ -223,23 +325,167 @@ If something goes wrong and the work cannot be completed, properly handle the fa
 - Unrecoverable errors in the workspace
 
 **Actions:**
-1. **Always stop the workspace:**
-   - Call `coder_create_workspace_build` with:
-     - `workspace_id`: The workspace ID
-     - `transition=stop`
-   - **Do not leave workspaces running after a failure**
 
-2. Inform the user of the failure and what happened
+### Step 1: Attempt to Salvage Work
+
+Even if the task failed, try to transfer any completed work:
+
+```
+1. Check if workspace is still accessible
+2. Identify any files that were created/modified
+3. Transfer salvageable files to home workspace
+4. Log what was transferred and what was lost
+```
+
+**Example:**
+```
+try:
+  # Try to get any changed files
+  result = coder_workspace_bash(
+    workspace="task-workspace-name",
+    command="find /home/coder/project -type f -mmin -60",
+    timeout_ms=15000
+  )
+  
+  # Transfer what we can
+  for file_path in result.stdout.split('\n'):
+    if file_path.strip():
+      content = coder_workspace_read_file(workspace="task-workspace-name", path=file_path)
+      coder_workspace_write_file(workspace="home-workspace-name", path=file_path, content=content)
+  
+  inform_user("Salvaged [N] files before stopping workspace")
+except:
+  inform_user("Could not salvage work - workspace inaccessible")
+```
+
+### Step 2: Stop the Workspace
+
+After attempting salvage:
+
+```
+coder_create_workspace_build(
+  workspace_id="task-workspace-id",
+  transition="stop"
+)
+```
 
 **CRITICAL:** Always stop the workspace after a failure to avoid consuming unnecessary resources.
+
+### Step 3: Inform User
+
+Provide clear information about:
+- What failed and why
+- What work (if any) was salvaged
+- What work was lost
+- Next steps
 
 **Note:** Task state (failure/error) is managed by the agent inside the workspace. External monitoring can check `coder_get_task_status` to see the final state.
 
 **Example failure flow:**
 ```
-1. coder_create_workspace_build(workspace_id="...", transition="stop")
-2. Inform user: "Work failed — [clear description]. Workspace is stopping."
+1. Attempt to salvage any completed work
+2. Transfer salvaged files to home workspace
+3. coder_create_workspace_build(workspace_id="...", transition="stop")
+4. Inform user: "Work failed — [clear description]. Salvaged [N] files. Workspace stopped."
 ```
+
+**Best Practice:** For long-running tasks, transfer work at checkpoints (see Checkpoint Pattern below) so that failure doesn't lose all progress.
+
+---
+
+## Checkpoint Pattern for Long Tasks
+
+For long-running tasks with multiple phases, transfer work at checkpoints to avoid losing progress if something fails.
+
+### When to Use Checkpoints
+
+- Multi-phase tasks (design → implement → test)
+- Long-running development (hours or days)
+- Complex refactoring with multiple steps
+- Any task where partial progress is valuable
+
+### Checkpoint Workflow
+
+**Phase 1: Initial Implementation**
+```
+1. Do work in task workspace
+2. Reach checkpoint (e.g., "basic implementation complete")
+3. Transfer files to home workspace
+4. Commit in home workspace: "Phase 1: Basic implementation"
+5. Continue to next phase
+```
+
+**Phase 2: Add Tests**
+```
+1. Continue work in task workspace
+2. Reach checkpoint (e.g., "tests added")
+3. Transfer files to home workspace
+4. Commit in home workspace: "Phase 2: Tests added"
+5. Continue to next phase
+```
+
+**Phase 3: Documentation**
+```
+1. Continue work in task workspace
+2. Complete final phase
+3. Transfer files to home workspace
+4. Commit in home workspace: "Phase 3: Documentation complete"
+5. Stop task workspace
+```
+
+### Benefits of Checkpoints
+
+- ✅ No work lost if task fails mid-way
+- ✅ Progress visible in home workspace
+- ✅ Can resume from checkpoint if needed
+- ✅ Clear project history with commits
+- ✅ Reduces risk of data loss
+
+### Checkpoint Implementation
+
+```python
+def checkpoint_transfer(task_workspace, home_workspace, phase_name):
+    """Transfer work at a checkpoint"""
+    
+    # 1. Identify changed files since last checkpoint
+    result = coder_workspace_bash(
+        workspace=task_workspace,
+        command="cd /home/coder/project && git diff --name-only HEAD",
+        timeout_ms=15000
+    )
+    
+    changed_files = [f for f in result.stdout.split('\n') if f.strip()]
+    
+    # 2. Transfer each file
+    for file_path in changed_files:
+        full_path = f"/home/coder/project/{file_path}"
+        content = coder_workspace_read_file(workspace=task_workspace, path=full_path)
+        coder_workspace_write_file(workspace=home_workspace, path=full_path, content=content)
+    
+    # 3. Commit in home workspace
+    coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"cd /home/coder/project && git add . && git commit -m 'Checkpoint: {phase_name}'",
+        timeout_ms=30000
+    )
+    
+    # 4. Create checkpoint marker in task workspace
+    coder_workspace_bash(
+        workspace=task_workspace,
+        command="cd /home/coder/project && git add . && git commit -m 'Checkpoint marker'",
+        timeout_ms=15000
+    )
+    
+    return len(changed_files)
+```
+
+### Checkpoint Best Practices
+
+1. **Transfer at logical boundaries:** End of phases, after tests pass, before breaks
+2. **Use descriptive commit messages:** "Phase 1: API implementation", "Checkpoint: Tests passing"
+3. **Verify transfer:** Always check files arrived in home workspace
+4. **Don't checkpoint too frequently:** Every 30-60 minutes is reasonable
+5. **Always checkpoint before long breaks:** End of day, lunch, meetings
 
 ---
 
@@ -277,11 +523,21 @@ Before creating a new task, check if there's already a running task for similar 
    ↓
 6. Monitor task state (coder_get_task_status shows state set by workspace agent)
    ↓
-7. When complete:
-   - Stop workspace (coder_create_workspace_build transition=stop)
+7. When complete or at checkpoint:
    ↓
-8. Optional: Delete task (coder_delete_task)
+8. **TRANSFER WORK TO HOME WORKSPACE** ← CRITICAL STEP
+   - Identify changed files
+   - Read from task workspace
+   - Write to home workspace
+   - Verify transfer
+   - Commit in home workspace
+   ↓
+9. Stop workspace (coder_create_workspace_build transition=stop)
+   ↓
+10. Optional: Delete task (coder_delete_task)
 ```
+
+**Key Addition:** Step 8 is the new critical step that ensures all work is preserved in the home workspace before the task workspace is stopped.
 
 ---
 
@@ -294,8 +550,9 @@ For simple, short-lived work:
 1. Create task with clear description
 2. Wait for running
 3. Do the work quickly
-4. Stop workspace immediately
-5. Delete task to keep task list clean
+4. **Transfer files to home workspace**
+5. Stop workspace immediately
+6. Delete task to keep task list clean
 ```
 
 ### Pattern: Long-Running Development Task
@@ -305,8 +562,10 @@ For extended development work:
 1. Create task with project description
 2. Wait for running
 3. Do the work (task state managed by workspace agent)
-4. Keep workspace running between work sessions
-5. When completely done, stop workspace
+4. **Transfer at checkpoints** (end of phases, before breaks)
+5. When completely done:
+   - **Final transfer to home workspace**
+   - Stop workspace
 6. Keep task in history for reference
 ```
 
@@ -319,7 +578,28 @@ For processing multiple items:
 3. For each item:
    - Do the work
    - Monitor progress via coder_get_task_status
-4. Stop workspace when complete
+4. **Transfer all results to home workspace**
+5. Stop workspace when complete
+```
+
+### Pattern: Multi-Phase Development
+
+For complex work with distinct phases:
+```
+1. Create task
+2. Phase 1: Design
+   - Do design work
+   - **Checkpoint: Transfer to home workspace**
+3. Phase 2: Implementation
+   - Implement features
+   - **Checkpoint: Transfer to home workspace**
+4. Phase 3: Testing
+   - Add tests
+   - **Checkpoint: Transfer to home workspace**
+5. Phase 4: Documentation
+   - Write docs
+   - **Final transfer to home workspace**
+6. Stop workspace
 ```
 
 ---

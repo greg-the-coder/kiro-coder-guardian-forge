@@ -5,6 +5,7 @@ A Kiro Power that connects Kiro agents to Coder deployments, enabling agents to 
 ## Key Features
 
 - **Agent-Ready Workspaces:** Create Coder Tasks that provision workspaces for agent work
+- **Work Transfer Pattern:** Task workspaces are ephemeral - work automatically transfers back to your home workspace
 - **Agent Collaboration:** External Kiro agents can collaborate with workspace agents (Claude Code, Cursor, etc.)
 - **Full Visibility:** All operations tracked in Coder Tasks UI
 - **No CLI Required:** Uses Coder's remote HTTP MCP server
@@ -14,9 +15,10 @@ A Kiro Power that connects Kiro agents to Coder deployments, enabling agents to 
 ## What's Included
 
 - **POWER.md** - Kiro Power definition with onboarding and tool reference
+- **WORK-TRANSFER-PATTERN.md** - Complete guide for transferring work from task to home workspace
 - **setup.sh** - Automatic MCP configuration script
 - **coder-template-example.tf** - Template code for automatic setup
-- **steering/task-workflow.md** - Creating and monitoring Coder Tasks
+- **steering/task-workflow.md** - Creating and monitoring Coder Tasks with work transfer
 - **steering/workspace-ops.md** - Running commands and editing files in workspaces
 - **steering/agent-interaction.md** - Collaborating with workspace agents
 

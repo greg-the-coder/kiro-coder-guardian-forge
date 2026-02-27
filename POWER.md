@@ -219,9 +219,25 @@ This file is created automatically and contains your actual Coder URL and sessio
 - Monitor task status with `coder_get_task_status` to track workspace agent progress
 - Use `coder_send_task_input` to delegate work to workspace agents (Claude Code, Cursor, etc.)
 - Check `coder_get_task_logs` to see workspace agent responses and activity
+- **CRITICAL: Transfer work from task workspace to home workspace before stopping** (see below)
 - Always stop workspaces after work is complete to free resources
 - Use dedicated file tools instead of bash `cat`/`echo`/`heredoc`
 - Set appropriate timeouts for `coder_workspace_bash` based on operation type
+
+**Work Transfer Pattern (NEW):**
+
+The home workspace (where Kiro is running) is the permanent source of truth. Task workspaces are ephemeral execution environments. Always transfer work back to the home workspace before stopping:
+
+1. **Identify changed files** in task workspace (use git diff or find)
+2. **Read files** from task workspace using `coder_workspace_read_file`
+3. **Write files** to home workspace using `coder_workspace_write_file`
+4. **Verify transfer** succeeded
+5. **Commit in home workspace** (if using git)
+6. **Then stop** task workspace
+
+**For long tasks:** Transfer at checkpoints (end of phases, before breaks) to avoid losing progress if something fails.
+
+**See `WORK-TRANSFER-PATTERN.md` for complete implementation details.**
 
 **Collaboration Patterns:**
 - **Orchestrator:** You coordinate, workspace agent implements specific tasks
