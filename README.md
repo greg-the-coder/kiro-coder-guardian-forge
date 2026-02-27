@@ -77,9 +77,10 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 
 ## Documentation
 
-- **POWER.md** - Complete power documentation
-- **setup.sh** - Automatic configuration script
-- **coder-template-example.tf** - Template integration example
+- **POWER.md** - Complete power documentation with enhanced troubleshooting
+- **setup.sh** - Automatic configuration script with health checks
+- **coder-template-example.tf** - Template integration example with error handling
+- **WORKSPACE-LIFECYCLE-GUIDE.md** - Guide for managing workspace lifecycle and costs
 - **MCP-STABILITY-NOTES.md** - MCP connection stability guide
 - **RECOMMENDED-SOLUTION.md** - Architecture and design decisions
 - **QUICK-START.md** - 5-minute quick start guide

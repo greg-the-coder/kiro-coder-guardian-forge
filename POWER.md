@@ -267,6 +267,32 @@ This file is created automatically and contains your actual Coder URL and sessio
 3. Check Coder server logs for rate limit configuration
 4. Contact Coder admin to increase MCP endpoint rate limits
 
+### Common Error Codes
+
+**401 Unauthorized**
+- Session token expired or invalid
+- Solution: Restart workspace to get fresh token, then run setup.sh
+
+**403 Forbidden**
+- User doesn't have permission for the operation
+- Solution: Check Coder RBAC settings for your user role
+
+**404 Not Found**
+- Workspace or task doesn't exist
+- Solution: Verify workspace name format: `owner/workspace-name`
+- Use `coder_list_workspaces` to find correct workspace name
+
+**429 Too Many Requests**
+- Rate limit exceeded
+- Solution: Wait 5-10 minutes, ensure using session token (not personal API token)
+- Check with Coder admin about rate limit configuration
+
+**502/503 Bad Gateway/Service Unavailable**
+- Coder server or proxy issue
+- Solution: Check Coder server health, verify `mcp-server-http` experiment enabled
+- If using CloudFront or other CDN, check CDN health
+- Review Coder server logs for errors
+
 ### Task Creation Issues
 
 **Problem:** "No templates available"
@@ -302,6 +328,44 @@ This file is created automatically and contains your actual Coder URL and sessio
 2. Use `background: true` for processes that don't need to complete immediately
 3. Check workspace is responsive: try simple command like `pwd`
 4. Review workspace logs in Coder UI for errors
+
+### Connection Health Check
+
+**Quick Test:**
+```bash
+# Test authentication
+curl -s -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
+  "${CODER_URL}api/v2/users/me" | jq -r '.username'
+# Should output: your-username
+```
+
+**Full Diagnostic:**
+```bash
+# 1. Check environment
+env | grep CODER_
+
+# 2. Check config
+cat ~/.kiro/settings/mcp.json
+
+# 3. Test API
+curl -s -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
+  "${CODER_URL}api/v2/users/me"
+
+# 4. Test MCP endpoint
+curl -s -X POST \
+  -H "Authorization: Bearer ${CODER_SESSION_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${CODER_URL}api/experimental/mcp/http" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+**In Kiro:**
+1. Call `coder_get_authenticated_user` → Verify auth
+2. Call `coder_list_templates` → Verify API access
+3. Call `coder_list_workspaces` → Verify workspace access
+4. Call `coder_list_tasks` → Verify task access
+
+All should succeed. If any fail, check specific permissions.
 
 ## Configuration
 

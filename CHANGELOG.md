@@ -1,5 +1,98 @@
 # Changelog
 
+## 2026-02-27 - Usability and Reliability Improvements (v2.1.0)
+
+### Enhanced
+
+**Setup Script (`setup.sh`):**
+- Added backup of existing configuration before overwriting
+- Expanded auto-approval list from 9 to 17 tools for better workflow coverage
+- Added connection health check with curl test
+- Improved error messages with actionable guidance
+- Added verification step to confirm config creation
+- Better visual feedback with tool count display
+
+**Template Example (`coder-template-example.tf`):**
+- Expanded auto-approval list to match setup.sh (17 tools)
+- Added error handling for directory creation
+- Added verification step for config creation
+- Fixed URL format to include proper path separator
+- Improved output messages with more detail
+
+**Documentation (`POWER.md`):**
+- Added comprehensive error code reference (401, 403, 404, 429, 502, 503)
+- Added connection health check section with curl commands
+- Added full diagnostic workflow for troubleshooting
+- Enhanced troubleshooting with specific solutions for each error type
+- Added CloudFront/CDN-specific guidance
+
+**Task Workflow (`steering/task-workflow.md`):**
+- Added optimal polling intervals with clear timing guidance
+- Added detailed workspace name extraction patterns (4 different patterns)
+- Enhanced workspace connection details section
+- Added rationale for polling intervals
+- Improved clarity on when and how to poll
+
+### Added
+
+**New Documentation:**
+- `WORKSPACE-LIFECYCLE-GUIDE.md` - Complete guide for managing workspace lifecycle
+  - Decision tree for stop/delete/keep running
+  - Resource cost considerations
+  - Best practices by use case (quick fixes, development, long-running)
+  - Automation recommendations
+  - Cost optimization tips
+  - Monitoring guidance
+
+**Auto-Approved Tools (expanded from 9 to 17):**
+- `coder_get_authenticated_user` - Connection verification
+- `coder_delete_task` - Task cleanup
+- `coder_send_task_input` - Agent collaboration
+- `coder_list_workspaces` - Workspace discovery
+- `coder_workspace_edit_files` - Batch file editing
+- `coder_workspace_list_apps` - App discovery
+- `coder_workspace_port_forward` - Port access
+- `coder_create_workspace_build` - Workspace lifecycle
+- `coder_template_version_parameters` - Template configuration
+
+### Benefits
+
+**Improved Reliability:**
+- Configuration backup prevents accidental data loss
+- Health checks catch connection issues early
+- Better error messages reduce troubleshooting time
+- Verification steps ensure proper setup
+
+**Better User Experience:**
+- Expanded auto-approval reduces friction
+- Clear polling guidance prevents API overload
+- Comprehensive error reference speeds problem resolution
+- Lifecycle guide helps with resource management
+
+**Cost Optimization:**
+- Lifecycle guide helps users manage workspace costs
+- Clear guidance on when to stop vs. keep running
+- Resource consideration section educates on cost implications
+
+**Enhanced Workflows:**
+- More tools auto-approved means smoother agent operations
+- Workspace name extraction patterns reduce confusion
+- Health check commands enable proactive monitoring
+
+### Migration Notes
+
+**For existing users:**
+- Run the updated setup.sh to get expanded auto-approval list
+- Review WORKSPACE-LIFECYCLE-GUIDE.md for cost optimization tips
+- No breaking changes - all existing configurations continue to work
+
+**For new users:**
+- Setup script now provides better feedback and verification
+- More tools work without manual approval
+- Better error messages guide through any issues
+
+---
+
 ## 2026-02-26 - Template-Based Configuration (v2.0.0)
 
 ### Breaking Changes

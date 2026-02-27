@@ -42,15 +42,15 @@ resource "coder_agent" "dev" {
         "coder_get_task_logs",
         "coder_list_templates",
         "coder_create_task",
-        "coder_list_workspaces",
-        "coder_get_workspace",
-        "coder_create_workspace_build",
-        "coder_send_task_input",
+        "coder_get_authenticated_user",
         "coder_delete_task",
-        "coder_list_tasks",
+        "coder_send_task_input",
+        "coder_list_workspaces",
         "coder_workspace_edit_files",
         "coder_workspace_list_apps",
-        "coder_workspace_port_forward"
+        "coder_workspace_port_forward",
+        "coder_create_workspace_build",
+        "coder_template_version_parameters"
       ]
     }
   }
@@ -101,7 +101,16 @@ resource "coder_script" "kiro_mcp_setup" {
         "coder_workspace_bash",
         "coder_get_task_logs",
         "coder_list_templates",
-        "coder_create_task"
+        "coder_create_task",
+        "coder_get_authenticated_user",
+        "coder_delete_task",
+        "coder_send_task_input",
+        "coder_list_workspaces",
+        "coder_workspace_edit_files",
+        "coder_workspace_list_apps",
+        "coder_workspace_port_forward",
+        "coder_create_workspace_build",
+        "coder_template_version_parameters"
       ]
     }
   }

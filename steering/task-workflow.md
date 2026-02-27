@@ -69,7 +69,7 @@ Once the template is confirmed, create the Coder Task.
 The workspace takes time to provision. You must wait until it's running before doing any work.
 
 **Actions:**
-1. Poll `coder_get_task_status` every 10 seconds
+1. Poll `coder_get_task_status` using optimal intervals (see below)
 2. Check the `status` field in the response
 3. Continue polling until status is no longer `pending` or `starting`
 4. Once status is `running`, the workspace is ready
@@ -80,6 +80,12 @@ The workspace takes time to provision. You must wait until it's running before d
 - `running` → Workspace is ready for work
 - `stopped` → Workspace has been stopped
 - `failed` → Workspace provisioning failed
+
+**Optimal Polling Intervals:**
+- **First check:** Immediately after task creation
+- **Subsequent checks:** Every 10 seconds
+- **Timeout:** 5 minutes for initial provisioning
+- **Reason:** Provisioning is usually quick (30-90 seconds) but can take longer for first-time images
 
 **Timeout handling:**
 - If the task has not reached `running` status within 5 minutes, something is wrong
@@ -102,16 +108,48 @@ After the workspace is running, you need its name for all subsequent operations.
 3. The workspace name format is typically: `<username>-<task-id>` or similar
 4. Store this workspace name — you'll need it for all `coder_workspace_*` tool calls
 
+**Extracting Workspace Name from Logs:**
+
+Look for these patterns in the logs:
+
+**Pattern 1: Direct workspace reference**
+```
+Workspace: owner/workspace-name
+```
+
+**Pattern 2: Task ID format**
+```
+Task created: owner--task-abc123
+```
+
+**Pattern 3: Agent connection log**
+```
+Agent connected in workspace: owner/workspace-name
+```
+
+**Pattern 4: Workspace build log**
+```
+Starting workspace build for: owner/workspace-name
+```
+
 **Alternative method:**
 If `coder_get_task_logs` doesn't provide the workspace name clearly:
 1. Call `coder_list_workspaces`
-2. Find the workspace created most recently
+2. Find the workspace created most recently (check `created_at` timestamp)
 3. Use that workspace name
 
 **Workspace name format:**
 The workspace parameter for all workspace operations uses the format: `owner/workspace-name`
 - Example: `alice/alice-task-123`
 - Example: `bob/python-dev-456`
+
+**Important:** Store this workspace name as you'll use it for:
+- `coder_workspace_bash` - Running commands
+- `coder_workspace_read_file` - Reading files
+- `coder_workspace_write_file` - Writing files
+- `coder_workspace_edit_file` - Editing files
+- `coder_workspace_ls` - Listing directories
+- All other workspace operations
 
 ---
 
@@ -127,6 +165,13 @@ Call `coder_get_task_status` periodically to check:
 - `state.timestamp`: When state was last updated
 
 **Note:** Task state is managed by the agent running inside the workspace (e.g., Claude Code, Cursor, etc.). External agents can only read the state, not update it.
+
+**Optimal Polling Intervals for Task State:**
+- **After sending prompt to workspace agent:** Wait 30 seconds before first check
+- **While agent is working:** Check every 30-60 seconds
+- **Long-running operations:** Check every 2-5 minutes
+- **Use exponential backoff for very long tasks:** 30s, 1m, 2m, 5m, 5m...
+- **Reason:** Give workspace agent time to work, reduce API load
 
 **Example monitoring:**
 ```json
