@@ -4,11 +4,362 @@ This steering file teaches you how to create and monitor Coder Tasks. Load this 
 
 ---
 
+## Quick Start: Create Task in 5-10 Minutes
+
+**For agents: Follow this complete workflow for fastest, error-free task creation**
+
+### Step 0: Pre-Flight Validation (REQUIRED - 1 minute)
+
+**Before creating any task, validate all prerequisites to prevent failures:**
+
+```python
+# Validation function - run this first
+def validate_task_prerequisites(home_workspace, repo_path):
+    """
+    Validate all prerequisites before task creation.
+    Returns: (valid: bool, issues: list, fixes: list)
+    """
+    issues = []
+    fixes = []
+    
+    # Check 1: Verify Coder environment
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command="echo $CODER_URL && echo $CODER_WORKSPACE_NAME",
+        timeout_ms=5000
+    )
+    if not result.stdout.strip():
+        issues.append("Not running in Coder workspace")
+        fixes.append("This power requires a Coder workspace environment")
+        return (False, issues, fixes)
+    
+    # Check 2: Verify git repository exists
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"cd {repo_path} && git status",
+        timeout_ms=10000
+    )
+    if result.exit_code != 0:
+        issues.append(f"No git repository found at {repo_path}")
+        fixes.append(f"Clone repository: git clone <repo-url> {repo_path}")
+        return (False, issues, fixes)
+    
+    # Check 3: Verify SSH authentication (CRITICAL)
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command="ssh -T git@github.com 2>&1",
+        timeout_ms=10000
+    )
+    if "successfully authenticated" not in result.stdout.lower():
+        issues.append("SSH authentication to GitHub not configured")
+        fixes.append("""
+SSH key setup required:
+1. Generate key: ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
+2. Display key: cat ~/.ssh/id_ed25519.pub
+3. Add to GitHub: https://github.com/settings/keys
+4. Test: ssh -T git@github.com
+        """)
+        return (False, issues, fixes)
+    
+    # Check 4: Verify git remote uses SSH
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"cd {repo_path} && git remote get-url origin",
+        timeout_ms=5000
+    )
+    if "https://" in result.stdout:
+        issues.append("Git remote uses HTTPS instead of SSH")
+        fixes.append(f"""
+Convert remote to SSH:
+cd {repo_path}
+git remote set-url origin git@github.com:user/repo.git
+git remote -v
+        """)
+        return (False, issues, fixes)
+    
+    # Check 5: Verify task-ready templates exist
+    templates = coder_list_templates()
+    task_templates = [t for t in templates 
+                     if 'task' in t.name.lower() or 'ai-task' in t.name.lower()]
+    if not task_templates:
+        issues.append("No task-ready templates available")
+        fixes.append("Contact Coder admin to create task-ready template with coder_ai_task resource")
+        return (False, issues, fixes)
+    
+    # All checks passed
+    return (True, [], [])
+
+# Run validation before proceeding
+valid, issues, fixes = validate_task_prerequisites(
+    home_workspace=f"{CODER_WORKSPACE_OWNER_NAME}/{CODER_WORKSPACE_NAME}",
+    repo_path="/workspaces/my-project"
+)
+
+if not valid:
+    print("❌ Pre-flight validation failed:")
+    for issue in issues:
+        print(f"  - {issue}")
+    print("\n🔧 Required fixes:")
+    for fix in fixes:
+        print(fix)
+    # STOP - do not proceed until issues are fixed
+    return False
+
+print("✅ All prerequisites validated - proceeding with task creation")
+```
+
+### Step 1: Filter Task-Ready Templates (30 seconds)
+
+```python
+def filter_task_ready_templates(all_templates):
+    """Filter templates to find task-ready ones"""
+    task_ready = []
+    
+    for template in all_templates:
+        name = template.name.lower()
+        desc = template.description.lower() if template.description else ""
+        
+        # High confidence indicators
+        if any(keyword in name for keyword in ['task', 'ai-task', 'claude-code', 'cursor']):
+            task_ready.append(template)
+            continue
+        
+        # Medium confidence indicators
+        if any(keyword in desc for keyword in ['ai task', 'agent work', 'claude code', 'ephemeral']):
+            task_ready.append(template)
+            continue
+    
+    return task_ready
+
+# Get and filter templates
+all_templates = coder_list_templates()
+task_templates = filter_task_ready_templates(all_templates)
+
+if not task_templates:
+    print("❌ No task-ready templates found")
+    print("Contact Coder admin to create template with coder_ai_task resource")
+    return False
+
+# Show templates to user
+print("Available task-ready templates:")
+for i, template in enumerate(task_templates, 1):
+    print(f"{i}. {template.name} - {template.description}")
+
+# Select template (first one or ask user)
+selected_template = task_templates[0]
+template_version_id = selected_template.active_version_id
+```
+
+### Step 2: Create Feature Branch (1 minute)
+
+```python
+import time
+
+# Generate unique feature branch name
+task_slug = task_description.lower().replace(" ", "-")[:30]
+feature_branch = f"feature/{task_slug}-{int(time.time())}"
+
+# Create and push feature branch in home workspace
+result = coder_workspace_bash(
+    workspace=home_workspace,
+    command=f"""
+        cd {repo_path}
+        
+        # Create feature branch
+        git checkout -b {feature_branch}
+        
+        # Push to remote
+        git push -u origin {feature_branch}
+        
+        # Verify push succeeded
+        if [ $? -eq 0 ]; then
+            echo "✅ Feature branch created: {feature_branch}"
+            git log -1 --oneline
+        else
+            echo "❌ Failed to push feature branch"
+            exit 1
+        fi
+    """,
+    timeout_ms=30000
+)
+
+if result.exit_code != 0:
+    print(f"❌ Failed to create feature branch: {result.stderr}")
+    return False
+
+print(f"✅ Feature branch created: {feature_branch}")
+```
+
+### Step 3: Create Task (1 minute)
+
+```python
+# Create task with git worktree parameters
+task = coder_create_task(
+    input=f"Work on {task_description}. Use git worktree on branch {feature_branch}.",
+    template_version_id=template_version_id,
+    rich_parameter_values={
+        "feature_branch": feature_branch,
+        "home_workspace": home_workspace,
+        "repo_path": repo_path
+    }
+)
+
+print(f"✅ Task created: {task.id}")
+print(f"📊 Monitor at: {CODER_URL}/tasks")
+```
+
+### Step 4: Wait for Workspace Ready (1-3 minutes)
+
+```python
+import time
+
+# Wait for workspace to be running
+max_wait = 300  # 5 minutes
+start_time = time.time()
+check_interval = 10  # Start with 10 seconds
+
+while True:
+    elapsed = time.time() - start_time
+    if elapsed > max_wait:
+        print("❌ Timeout waiting for workspace to start")
+        return False
+    
+    status = coder_get_task_status(task_id=task.id)
+    
+    if status.status == "running":
+        print("✅ Workspace is running and ready")
+        break
+    elif status.status == "failed":
+        print(f"❌ Workspace provisioning failed: {status.error}")
+        return False
+    else:
+        print(f"⏳ Workspace status: {status.status} (waiting {check_interval}s)")
+        time.sleep(check_interval)
+        check_interval = min(check_interval + 5, 30)  # Increase interval up to 30s
+```
+
+### Step 5: Get Workspace Name (30 seconds)
+
+```python
+# Get workspace connection details from logs
+logs = coder_get_task_logs(task_id=task.id)
+
+# Extract workspace name (format: owner/workspace-name)
+# Look for patterns in logs
+import re
+workspace_match = re.search(r'Workspace:\s+(\S+/\S+)', logs)
+if workspace_match:
+    task_workspace = workspace_match.group(1)
+else:
+    # Fallback: use task ID format
+    task_workspace = f"{CODER_WORKSPACE_OWNER_NAME}/{task.id}"
+
+print(f"✅ Task workspace: {task_workspace}")
+```
+
+### Step 6: Begin Work (Ready!)
+
+```python
+print(f"""
+✅ Task ready for work!
+
+Task ID: {task.id}
+Workspace: {task_workspace}
+Feature Branch: {feature_branch}
+Monitor: {CODER_URL}/tasks
+
+Next steps:
+- Send work to task workspace with coder_send_task_input
+- Or execute commands with coder_workspace_bash
+- Monitor progress with coder_get_task_status
+- When complete, merge back to home workspace
+""")
+```
+
+**Total time: 5-10 minutes from validation to ready**
+
+---
+
 ## Core Principle: Always Use Tasks
 
 **CRITICAL:** All work must start with a Coder Task via `coder_create_task`. This is what makes the workspace visible in the Coder Tasks UI with lifecycle tracking and progress reporting.
 
 **Never call `coder_create_workspace` directly** — the task creates and manages the underlying workspace automatically.
+
+---
+
+## Pre-Flight Validation Checklist
+
+**Always run these checks before creating a task to prevent failures:**
+
+### 1. Verify Coder Workspace Environment
+
+```bash
+# Check environment variables
+echo $CODER_URL
+echo $CODER_WORKSPACE_NAME
+echo $CODER_WORKSPACE_OWNER_NAME
+```
+
+**Expected:** All variables should have values  
+**If missing:** Not running in Coder workspace - this power requires Coder
+
+### 2. Verify Git Repository
+
+```bash
+# Check git repository exists
+cd /workspaces/my-project && git status
+```
+
+**Expected:** Should show git status, not "not a git repository"  
+**If fails:** Clone repository or initialize git
+
+### 3. Verify SSH Authentication (CRITICAL)
+
+```bash
+# Test SSH connection to GitHub
+ssh -T git@github.com
+```
+
+**Expected:** "Hi username! You've successfully authenticated"  
+**If fails:**
+```bash
+# Generate SSH key
+ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
+
+# Display public key
+cat ~/.ssh/id_ed25519.pub
+
+# Add to GitHub: https://github.com/settings/keys
+# Test again: ssh -T git@github.com
+```
+
+### 4. Verify Git Remote Uses SSH
+
+```bash
+cd /workspaces/my-project
+git remote -v
+```
+
+**Expected:** Should show `git@github.com:user/repo.git`  
+**If shows https://**:
+```bash
+# Convert to SSH
+git remote set-url origin git@github.com:user/repo.git
+git remote -v
+```
+
+### 5. Verify Task-Ready Templates
+
+```python
+# Call coder_list_templates and filter
+templates = coder_list_templates()
+task_templates = [t for t in templates 
+                 if 'task' in t.name.lower() or 'ai-task' in t.name.lower()]
+```
+
+**Expected:** At least one task-ready template available  
+**If none found:** Contact Coder administrator to create task-ready template
 
 ---
 

@@ -96,6 +96,116 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 
 The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and session token.
 
+### SSH Authentication Setup (CRITICAL)
+
+**IMPORTANT:** SSH authentication is required for git push operations in task workspaces. Without proper SSH configuration, tasks will complete work but fail to push changes.
+
+#### Quick Setup (5 minutes)
+
+**Step 1: Check if SSH key exists**
+```bash
+ls ~/.ssh/id_ed25519 || ls ~/.ssh/id_rsa
+```
+
+**Step 2: Generate SSH key (if needed)**
+```bash
+# Generate new ED25519 key (recommended)
+ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
+
+# Display public key
+cat ~/.ssh/id_ed25519.pub
+```
+
+**Step 3: Add key to git provider**
+
+**For GitHub:**
+1. Copy public key: `cat ~/.ssh/id_ed25519.pub`
+2. Go to https://github.com/settings/keys
+3. Click "New SSH key"
+4. Paste key and save
+
+**For GitLab:**
+1. Copy public key: `cat ~/.ssh/id_ed25519.pub`
+2. Go to https://gitlab.com/-/profile/keys
+3. Paste key and save
+
+**Step 4: Test authentication**
+```bash
+# GitHub
+ssh -T git@github.com
+# Expected: "Hi username! You've successfully authenticated..."
+
+# GitLab
+ssh -T git@gitlab.com
+# Expected: "Welcome to GitLab, @username!"
+```
+
+**Step 5: Verify git remote uses SSH**
+```bash
+cd /workspaces/your-project
+git remote -v
+
+# Should show: git@github.com:user/repo.git
+# If shows https://, convert to SSH:
+git remote set-url origin git@github.com:user/repo.git
+```
+
+#### Troubleshooting SSH Issues
+
+**Problem: "Permission denied (publickey)"**
+
+Solution:
+```bash
+# Check SSH agent
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+
+# Test again
+ssh -T git@github.com
+```
+
+**Problem: "Could not resolve hostname"**
+
+Solution:
+```bash
+# Check network connectivity
+ping github.com
+
+# Check SSH config
+cat ~/.ssh/config
+```
+
+**Problem: Git remote uses HTTPS instead of SSH**
+
+Solution:
+```bash
+cd /workspaces/your-project
+
+# Get current remote URL
+git remote get-url origin
+
+# Convert HTTPS to SSH
+# From: https://github.com/user/repo.git
+# To:   git@github.com:user/repo.git
+git remote set-url origin git@github.com:user/repo.git
+
+# Verify
+git remote -v
+```
+
+**Problem: SSH key permissions incorrect**
+
+Solution:
+```bash
+# Fix permissions
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_ed25519
+chmod 644 ~/.ssh/id_ed25519.pub
+
+# Test again
+ssh -T git@github.com
+```
+
 ## Configuration
 
 ### Task-Ready Templates
@@ -137,6 +247,67 @@ When calling `coder_list_templates`, look for templates that:
 **If no task-ready templates exist:**
 
 Ask your Coder administrator to create one. See `coder-template-example.tf` in this power for a complete example that includes both MCP configuration and `coder_ai_task` resource definition.
+
+### Template Selection Guide
+
+**Choosing the right template is critical for successful task creation.** Use this guide to select the appropriate template for your work.
+
+#### Template Selection Matrix
+
+| Task Type | Recommended Template Pattern | Why |
+|-----------|----------------------------|-----|
+| Python development | `python-ai-task`, `python-task` | Python tools, pip, Claude Code, git worktree |
+| Node.js/TypeScript | `node-ai-task`, `node-task` | Node.js, npm, Claude Code, git worktree |
+| Go development | `go-ai-task`, `go-task` | Go toolchain, Claude Code, git worktree |
+| General coding | `claude-code-general`, `ai-task-general` | Multi-language, Claude Code, git worktree |
+| Data science | `python-data-task` | Python, Jupyter, pandas, Claude Code |
+
+#### Filtering Task-Ready Templates
+
+When calling `coder_list_templates`, filter using these criteria:
+
+**High confidence indicators (name patterns):**
+- Contains "task" or "ai-task"
+- Contains "claude-code" or "cursor"
+- Contains "agent" or "ai-agent"
+
+**Medium confidence indicators (description patterns):**
+- Mentions "AI task" or "agent work"
+- Mentions "ephemeral" or "task workspace"
+- Mentions specific AI agents (Claude Code, Cursor)
+
+**Avoid templates with:**
+- "jupyter" only (notebook-focused, may lack task support)
+- "cli" only (may lack `coder_ai_task` resource)
+- "base" or "minimal" (likely missing AI agent)
+
+#### Example Template Capabilities
+
+**python-ai-task:**
+- ✅ Python 3.11+
+- ✅ pip, poetry
+- ✅ Claude Code agent
+- ✅ Git worktree support
+- ✅ SSH key configuration
+- ❌ No Node.js
+
+**node-ai-task:**
+- ✅ Node.js 20+
+- ✅ npm, yarn, pnpm
+- ✅ Claude Code agent
+- ✅ Git worktree support
+- ✅ SSH key configuration
+- ❌ No Python
+
+**claude-code-general:**
+- ✅ Multi-language support
+- ✅ Python, Node.js, Go
+- ✅ Claude Code agent
+- ✅ Git worktree support
+- ✅ SSH key configuration
+- ⚠️ May be larger/slower to provision
+
+
 
 ### MCP Server Setup
 
@@ -220,6 +391,62 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 | `coder_list_workspaces` | Look up workspace details |
 
 **Note:** Task state (working, idle, failure) is managed by the agent inside the workspace, not externally. External agents monitor state via `coder_get_task_status`.
+
+## Common Patterns
+
+**Quick reference for common workflows. For detailed guidance, load the appropriate steering file.**
+
+### Pattern: Quick Task Creation
+
+**Goal:** Create a task with proper validation in 5-10 minutes
+
+**Steps:**
+1. Validate prerequisites (SSH auth, git repo, templates)
+2. Filter for task-ready templates
+3. Create feature branch in home workspace
+4. Create task with git worktree parameters
+5. Wait for workspace ready
+6. Begin work
+
+**Details:** Load `task-workflow.md` steering file for complete Quick Start workflow
+
+### Pattern: Delegate and Monitor
+
+**Goal:** Delegate work to workspace agent and monitor progress
+
+**Steps:**
+1. Send clear prompt with `coder_send_task_input`
+2. Monitor with smart polling (10s, 30s, 60s intervals)
+3. Check logs periodically for progress
+4. Handle completion or failure
+
+**Details:** Load `agent-interaction.md` steering file for delegation patterns
+
+### Pattern: Complete and Merge
+
+**Goal:** Merge completed work back to home workspace
+
+**Steps:**
+1. Commit and push from task workspace
+2. Fetch and merge in home workspace (use --no-ff)
+3. Verify merge succeeded
+4. Clean up feature branch (optional)
+5. Stop task workspace
+
+**Details:** Load `task-workflow.md` steering file for complete merge workflow
+
+### Pattern: Run Commands and Edit Files
+
+**Goal:** Execute operations in workspace efficiently
+
+**Steps:**
+1. Use `coder_workspace_bash` for commands (set appropriate timeout)
+2. Use `coder_workspace_read_file` to read files
+3. Use `coder_workspace_edit_file` for targeted changes
+4. Use `coder_workspace_write_file` for new files (base64-encode content)
+5. Always check exit codes and verify operations
+
+**Details:** Load `workspace-ops.md` steering file for operation examples
 
 ## Best Practices
 
