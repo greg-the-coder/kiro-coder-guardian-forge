@@ -17,12 +17,18 @@ fi
 if [ -z "$CODER_SESSION_TOKEN" ]; then
   echo "❌ Error: CODER_SESSION_TOKEN environment variable not set"
   echo "This power requires running inside a Coder workspace"
+  echo ""
+  echo "Note: This script is a fallback for workspaces without template-based MCP configuration."
+  echo "      Recommended: Ask your Coder admin to add MCP configuration to the workspace template."
   exit 1
 fi
 
 echo "✅ Detected Coder workspace environment"
 echo "   CODER_URL: $CODER_URL"
 echo "   CODER_SESSION_TOKEN: ${CODER_SESSION_TOKEN:0:10}..."
+echo ""
+echo "Note: This script uses CODER_SESSION_TOKEN (session token) for authentication."
+echo "      Session tokens have higher rate limits than personal API tokens."
 echo ""
 
 # Create Kiro settings directory
