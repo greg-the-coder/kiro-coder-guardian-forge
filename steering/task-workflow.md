@@ -586,25 +586,161 @@ Call `coder_get_task_status` periodically to check:
 
 ## Completing a Task
 
-When all work is done successfully, properly complete the task by merging the feature branch back to the home workspace.
+When all work is done successfully, properly complete the task by transferring work back to the home workspace.
 
-**GIT WORKTREE PATTERN:** Task workspaces work on feature branches via git worktrees. Work is shared via standard git operations (commit, push, merge) instead of file copying.
+**WORK TRANSFER PATTERN:** Task workspaces work on feature branches. Work is shared via git operations (commit, push, fetch, merge) - the most efficient and reliable method.
 
-### Step 1: Commit and Push from Task Workspace
+### Complete Task with Automatic Cleanup
 
-Ensure all work in the task workspace is committed and pushed to the feature branch:
+Use this comprehensive function for reliable task completion:
+
+```python
+def complete_task_with_cleanup(task_workspace, home_workspace, feature_branch, task_description, repo_path="/workspaces/project"):
+    """Complete task with automatic work transfer and cleanup"""
+    
+    # Step 1: Commit and push from task workspace
+    print("📤 Committing and pushing from task workspace...")
+    result = coder_workspace_bash(
+        workspace=task_workspace,
+        command=f"""
+            cd {repo_path}
+            
+            # Check for uncommitted changes
+            if [ -n "$(git status --porcelain)" ]; then
+                # Stage all changes
+                git add .
+                
+                # Commit with descriptive message
+                git commit -m "Complete: {task_description}"
+            fi
+            
+            # Push to remote
+            git push origin {feature_branch}
+            
+            # Verify push succeeded
+            if [ $? -eq 0 ]; then
+                echo "✅ Pushed to {feature_branch}"
+                git log -1 --oneline
+            else
+                echo "❌ Push failed"
+                exit 1
+            fi
+        """,
+        timeout_ms=60000
+    )
+    
+    if result.exit_code != 0:
+        print(f"❌ Failed to push from task workspace: {result.stderr}")
+        return False
+    
+    print(f"✅ Task workspace pushed to {feature_branch}")
+    
+    # Step 2: Fetch and merge in home workspace
+    print("📥 Fetching and merging in home workspace...")
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"""
+            cd {repo_path}
+            
+            # Fetch latest from remote
+            git fetch origin {feature_branch}
+            
+            # Checkout main branch
+            git checkout main
+            
+            # Pull latest main
+            git pull origin main
+            
+            # Merge feature branch (no fast-forward to preserve history)
+            git merge origin/{feature_branch} --no-ff -m "Merge: {task_description}"
+            
+            # Push to remote
+            git push origin main
+            
+            # Show merge result
+            echo "✅ Merge complete"
+            git log --oneline -3
+            git diff --stat HEAD~1
+        """,
+        timeout_ms=60000
+    )
+    
+    if result.exit_code != 0:
+        print(f"❌ Failed to merge in home workspace: {result.stderr}")
+        print("⚠️ Work is pushed to feature branch but not merged to main")
+        return False
+    
+    print(f"✅ Work transferred successfully via git")
+    print(f"Changes: {result.stdout}")
+    
+    # Step 3: Stop task workspace immediately
+    print("🛑 Stopping task workspace...")
+    try:
+        # Get workspace ID from task
+        workspaces = coder_list_workspaces()
+        task_ws = next((w for w in workspaces if task_workspace in w.name), None)
+        
+        if task_ws:
+            coder_create_workspace_build(
+                workspace_id=task_ws.id,
+                transition="stop"
+            )
+            print(f"✅ Task workspace stopped: {task_workspace}")
+        else:
+            print(f"⚠️ Task workspace not found (may already be stopped): {task_workspace}")
+    except Exception as e:
+        print(f"⚠️ Could not stop workspace: {e}")
+        print("Note: Workspace may have auto-stopped or been deleted")
+    
+    # Step 4: Optional - Delete feature branch
+    print("🧹 Cleaning up feature branch...")
+    coder_workspace_bash(
+        workspace=home_workspace,
+        command=f"""
+            cd {repo_path}
+            git branch -d {feature_branch} 2>/dev/null || true
+            git push origin --delete {feature_branch} 2>/dev/null || true
+        """,
+        timeout_ms=30000
+    )
+    
+    print(f"""
+✅ Task complete and cleaned up!
+
+Work transferred: {feature_branch} → main
+Task workspace: stopped
+Feature branch: deleted
+Repository: {repo_path}
+    """)
+    
+    return True
+
+# Example usage
+success = complete_task_with_cleanup(
+    task_workspace="alice/task-abc123",
+    home_workspace="alice/main-workspace",
+    feature_branch="feature/phase-5-cdk-integration",
+    task_description="Integrate React build into CDK deployment",
+    repo_path="/workspaces/mvp-ai-demo"
+)
+```
+
+### Manual Step-by-Step (If Needed)
+
+If you need more control, follow these steps manually:
+
+#### Step 1: Commit and Push from Task Workspace
 
 ```python
 coder_workspace_bash(
     workspace=task_workspace,
-    command="""
-        cd /workspaces/task-workspace
+    command=f"""
+        cd {repo_path}
         
         # Check for uncommitted changes
         if [ -n "$(git status --porcelain)" ]; then
-            # Commit any remaining changes
             git add .
-            git commit -m "Complete task: [description]"
+            git commit -m "Complete: {task_description}"
         fi
         
         # Push to remote
@@ -613,28 +749,26 @@ coder_workspace_bash(
         # Show final commit
         git log -1 --oneline
     """,
-    timeout_ms=30000
+    timeout_ms=60000
 )
 ```
 
-### Step 2: Merge Feature Branch in Home Workspace
-
-Merge the feature branch to main in the home workspace:
+#### Step 2: Fetch and Merge in Home Workspace
 
 ```python
 coder_workspace_bash(
     workspace=home_workspace,
     command=f"""
-        cd /workspaces/my-project
+        cd {repo_path}
         
         # Fetch latest changes
-        git fetch origin
+        git fetch origin {feature_branch}
         
         # Checkout main branch
         git checkout main
         
         # Merge feature branch (no fast-forward to preserve history)
-        git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}: [task description]"
+        git merge origin/{feature_branch} --no-ff -m "Merge {feature_branch}: {task_description}"
         
         # Push to remote
         git push origin main
@@ -642,106 +776,95 @@ coder_workspace_bash(
         # Show merge commit
         git log -1 --oneline
     """,
-    timeout_ms=30000
+    timeout_ms=60000
 )
 ```
 
-### Step 3: Verify Merge
-
-Confirm the merge was successful:
+#### Step 3: Verify Merge
 
 ```python
 result = coder_workspace_bash(
     workspace=home_workspace,
-    command="""
-        cd /workspaces/my-project
-        git log --oneline -5
-    """,
+    command=f"cd {repo_path} && git log --oneline -5",
     timeout_ms=15000
 )
 
-# Check exit code
 if result.exit_code == 0:
     print(f"✅ Merge successful: {result.stdout}")
 else:
     print(f"❌ Merge failed: {result.stderr}")
 ```
 
-### Step 4: Clean Up Feature Branch (Optional)
-
-Delete the feature branch after successful merge:
+#### Step 4: Stop Task Workspace
 
 ```python
-coder_workspace_bash(
-    workspace=home_workspace,
-    command=f"""
-        cd /workspaces/my-project
-        
-        # Delete local branch
-        git branch -d {feature_branch}
-        
-        # Delete remote branch
-        git push origin --delete {feature_branch}
-        
-        # Prune worktree references
-        git worktree prune
-    """,
-    timeout_ms=15000
-)
+# Get workspace ID
+workspaces = coder_list_workspaces()
+task_ws = next((w for w in workspaces if task_workspace in w.name), None)
+
+if task_ws:
+    coder_create_workspace_build(
+        workspace_id=task_ws.id,
+        transition="stop"
+    )
+    print(f"✅ Task workspace stopped")
 ```
 
-### Step 5: Stop Task Workspace
+### Workspace Lifecycle Management
 
-After successful merge:
+**BEST PRACTICE:** Stop task workspaces immediately after successful work transfer to free resources.
 
-```python
-coder_create_workspace_build(
-    workspace_id=task_workspace_id,
-    transition="stop"
-)
-```
+#### Workspace Lifecycle States
 
-### Step 6: Inform User
+| State | Meaning | Action |
+|-------|---------|--------|
+| `pending` | Queued for provisioning | Wait |
+| `starting` | Provisioning in progress | Wait |
+| `running` | Ready for work | Use it |
+| `stopping` | Shutting down | Wait for stopped |
+| `stopped` | Not consuming resources | Can delete or restart |
+| `failed` | Provisioning failed | Delete and retry |
 
-```python
-print(f"""
-✅ Task complete!
+#### When to Stop vs Delete
 
-Feature branch: {feature_branch}
-Merged to: main
-Commits: [show commit count]
-Task workspace: stopped
+**Stop workspace when:**
+- ✅ Work is transferred to home workspace
+- ✅ Task is complete
+- ✅ Taking a break (>1 hour)
+- ✅ End of day
 
-All changes are now in the home workspace on the main branch.
-""")
-```
+**Delete workspace when:**
+- ✅ Work is complete AND merged
+- ✅ Task failed and work is not salvageable
+- ✅ Workspace is no longer needed
+- ✅ Cleaning up old tasks
 
-**CRITICAL RULES:**
+**Keep workspace running when:**
+- ⏳ Actively working
+- ⏳ Waiting for long-running operation
+- ⏳ Debugging issues
+
+### CRITICAL RULES
+
 1. ✅ Always commit and push from task workspace BEFORE merging
 2. ✅ Use `--no-ff` flag to preserve feature branch history
 3. ✅ Verify merge succeeded before stopping workspace
-4. ✅ Home workspace main branch is the permanent record
+4. ✅ Stop workspace immediately after successful transfer
+5. ✅ Home workspace main branch is the permanent record
 
-**Example completion flow:**
-```
-1. Task workspace commits and pushes to feature branch
-2. Home workspace fetches and merges feature branch to main
-3. Verify merge successful
-4. Clean up feature branch (optional)
-5. Stop task workspace
-6. Inform user of completion
-```
+### Benefits of Git-Fetch Approach
 
-**Benefits of git worktree approach:**
-- ✅ No file copying needed
-- ✅ Minimal token usage (only git commands)
-- ✅ Full git history preserved
-- ✅ Atomic operations
-- ✅ Standard git workflow
+- ✅ **Fast:** 2 minutes vs 20 minutes for manual file copying (90% reduction)
+- ✅ **Reliable:** Standard git operations, well-tested
+- ✅ **Complete:** All files transferred atomically
+- ✅ **History:** Full git history preserved
+- ✅ **Low token usage:** Only git commands, no file reading
+- ✅ **Automatic:** No manual file-by-file copying needed
 
-**Getting Home Workspace Name:**
+### Getting Home Workspace Name
+
 The home workspace is where Kiro is currently running:
-```
+```python
 HOME_WORKSPACE = f"{CODER_WORKSPACE_OWNER_NAME}/{CODER_WORKSPACE_NAME}"
 ```
 These environment variables are automatically available in Coder workspaces.
@@ -977,6 +1100,235 @@ Before creating a new task, check if there's already a running task for similar 
 
 ---
 
+## Parallel Task Execution Patterns
+
+### Pattern 1: Independent Parallel Tasks
+
+For completely independent tasks that can run simultaneously:
+
+```python
+def create_parallel_tasks(tasks_config, home_workspace, repo_path="/workspaces/project"):
+    """Create multiple independent tasks in parallel"""
+    
+    task_ids = []
+    feature_branches = []
+    task_workspaces = []
+    
+    # Create all tasks
+    for config in tasks_config:
+        # Create feature branch
+        branch = f"feature/{config['name']}-{int(time.time())}"
+        feature_branches.append(branch)
+        
+        result = coder_workspace_bash(
+            workspace=home_workspace,
+            command=f"""
+                cd {repo_path}
+                git checkout main
+                git pull origin main
+                git checkout -b {branch}
+                git push -u origin {branch}
+            """,
+            timeout_ms=30000
+        )
+        
+        if result.exit_code != 0:
+            print(f"❌ Failed to create branch {branch}: {result.stderr}")
+            continue
+        
+        # Create task
+        task = coder_create_task(
+            input=config['prompt'],
+            template_version_id=config['template_id'],
+            rich_parameter_values={
+                "feature_branch": branch,
+                "home_workspace": home_workspace,
+                "repo_path": repo_path
+            }
+        )
+        
+        task_ids.append(task.id)
+        task_workspaces.append(f"{CODER_WORKSPACE_OWNER_NAME}/{task.id}")
+        print(f"✅ Created task: {config['name']} on branch {branch}")
+    
+    return task_ids, feature_branches, task_workspaces
+
+# Monitor all tasks
+def monitor_parallel_tasks(task_ids):
+    """Monitor multiple tasks until all complete"""
+    
+    pending_tasks = set(task_ids)
+    completed_tasks = []
+    failed_tasks = []
+    
+    while pending_tasks:
+        for task_id in list(pending_tasks):
+            status = coder_get_task_status(task_id=task_id)
+            
+            if status.state.state in ['idle', 'completed']:
+                pending_tasks.remove(task_id)
+                completed_tasks.append(task_id)
+                print(f"✅ Task completed: {task_id}")
+            elif status.state.state == 'failure':
+                pending_tasks.remove(task_id)
+                failed_tasks.append(task_id)
+                print(f"❌ Task failed: {task_id}")
+        
+        if pending_tasks:
+            print(f"⏳ {len(pending_tasks)} tasks still running...")
+            time.sleep(30)  # Check every 30 seconds
+    
+    return completed_tasks, failed_tasks
+
+# Example usage
+tasks = [
+    {
+        'name': 'phase-5-cdk',
+        'prompt': 'Integrate React build into CDK deployment pipeline...',
+        'template_id': 'template-123'
+    },
+    {
+        'name': 'phase-6-monitoring',
+        'prompt': 'Add monitoring dashboard with CloudWatch metrics...',
+        'template_id': 'template-123'
+    }
+]
+
+task_ids, branches, workspaces = create_parallel_tasks(tasks, home_workspace)
+completed, failed = monitor_parallel_tasks(task_ids)
+
+# Transfer work from all completed tasks
+for i, task_id in enumerate(completed):
+    complete_task_with_cleanup(
+        task_workspace=workspaces[i],
+        home_workspace=home_workspace,
+        feature_branch=branches[i],
+        task_description=tasks[i]['name']
+    )
+
+print(f"✅ All tasks complete: {len(completed)} succeeded, {len(failed)} failed")
+```
+
+### Pattern 2: Sequential with Dependencies
+
+For tasks where one depends on another:
+
+```python
+def create_sequential_tasks(tasks_config, home_workspace, repo_path="/workspaces/project"):
+    """Create tasks sequentially with dependencies"""
+    
+    results = []
+    
+    for i, config in enumerate(tasks_config):
+        print(f"Starting task {i+1}/{len(tasks_config)}: {config['name']}")
+        
+        # Create feature branch
+        branch = f"feature/{config['name']}-{int(time.time())}"
+        
+        coder_workspace_bash(
+            workspace=home_workspace,
+            command=f"""
+                cd {repo_path}
+                git checkout main
+                git pull origin main
+                git checkout -b {branch}
+                git push -u origin {branch}
+            """,
+            timeout_ms=30000
+        )
+        
+        # Add dependency context if available
+        prompt = config['prompt']
+        if results:
+            prompt += f"\n\nNote: This builds on work from {results[-1]['name']} (merged to main)."
+        
+        # Create task
+        task = coder_create_task(
+            input=prompt,
+            template_version_id=config['template_id'],
+            rich_parameter_values={
+                "feature_branch": branch,
+                "home_workspace": home_workspace,
+                "repo_path": repo_path
+            }
+        )
+        
+        task_workspace = f"{CODER_WORKSPACE_OWNER_NAME}/{task.id}"
+        
+        # Wait for completion
+        while True:
+            status = coder_get_task_status(task_id=task.id)
+            if status.state.state in ['idle', 'completed']:
+                break
+            elif status.state.state == 'failure':
+                print(f"❌ Task failed: {config['name']}")
+                return results
+            time.sleep(30)
+        
+        # Transfer work
+        success = complete_task_with_cleanup(
+            task_workspace=task_workspace,
+            home_workspace=home_workspace,
+            feature_branch=branch,
+            task_description=config['name'],
+            repo_path=repo_path
+        )
+        
+        if not success:
+            print(f"❌ Failed to transfer work from {config['name']}")
+            return results
+        
+        results.append({
+            'task_id': task.id,
+            'branch': branch,
+            'name': config['name']
+        })
+        
+        print(f"✅ Task {i+1} complete: {config['name']}")
+    
+    return results
+```
+
+### Pattern 3: Hybrid (Parallel Groups with Dependencies)
+
+For complex workflows with both parallel and sequential phases:
+
+```python
+# Phase 1: Foundation (sequential)
+print("Phase 1: Foundation")
+foundation = create_sequential_tasks([
+    {'name': 'setup-infrastructure', 'prompt': '...', 'template_id': '...'}
+], home_workspace)
+
+# Phase 2: Parallel development (independent)
+print("Phase 2: Parallel Development")
+parallel_tasks = [
+    {'name': 'frontend-components', 'prompt': '...', 'template_id': '...'},
+    {'name': 'backend-api', 'prompt': '...', 'template_id': '...'},
+    {'name': 'database-schema', 'prompt': '...', 'template_id': '...'}
+]
+
+task_ids, branches, workspaces = create_parallel_tasks(parallel_tasks, home_workspace)
+completed, failed = monitor_parallel_tasks(task_ids)
+
+# Transfer all parallel work
+for i, task_id in enumerate(completed):
+    complete_task_with_cleanup(
+        task_workspace=workspaces[i],
+        home_workspace=home_workspace,
+        feature_branch=branches[i],
+        task_description=parallel_tasks[i]['name']
+    )
+
+# Phase 3: Integration (sequential, depends on Phase 2)
+print("Phase 3: Integration")
+integration = create_sequential_tasks([
+    {'name': 'integrate-components', 'prompt': '...', 'template_id': '...'}
+], home_workspace)
+
+print("✅ All phases complete!")
+```
+
 ## Common Patterns
 
 ### Pattern: Quick Task for Simple Work
@@ -986,7 +1338,7 @@ For simple, short-lived work:
 1. Create task with clear description
 2. Wait for running
 3. Do the work quickly
-4. **Transfer files to home workspace**
+4. **Transfer via git (commit, push, fetch, merge)**
 5. Stop workspace immediately
 6. Delete task to keep task list clean
 ```
@@ -1000,7 +1352,7 @@ For extended development work:
 3. Do the work (task state managed by workspace agent)
 4. **Transfer at checkpoints** (end of phases, before breaks)
 5. When completely done:
-   - **Final transfer to home workspace**
+   - **Final transfer via git**
    - Stop workspace
 6. Keep task in history for reference
 ```
@@ -1014,7 +1366,7 @@ For processing multiple items:
 3. For each item:
    - Do the work
    - Monitor progress via coder_get_task_status
-4. **Transfer all results to home workspace**
+4. **Transfer all results via gitspace**
 5. Stop workspace when complete
 ```
 

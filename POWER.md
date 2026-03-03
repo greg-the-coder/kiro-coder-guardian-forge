@@ -396,7 +396,7 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 
 **Quick reference for common workflows. For detailed guidance, load the appropriate steering file.**
 
-### Pattern: Quick Task Creation
+### Pattern: Quick Task Creation with Validation
 
 **Goal:** Create a task with proper validation in 5-10 minutes
 
@@ -404,9 +404,11 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 1. Validate prerequisites (SSH auth, git repo, templates)
 2. Filter for task-ready templates
 3. Create feature branch in home workspace
-4. Create task with git worktree parameters
+4. Create task with comprehensive prompt (including validation requirements)
 5. Wait for workspace ready
-6. Begin work
+6. Monitor progress
+7. Transfer work via git (commit/push/fetch/merge)
+8. Stop workspace immediately
 
 **Details:** Load `task-workflow.md` steering file for complete Quick Start workflow
 
@@ -415,25 +417,39 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 **Goal:** Delegate work to workspace agent and monitor progress
 
 **Steps:**
-1. Send clear prompt with `coder_send_task_input`
+1. Send comprehensive prompt with validation checklist
 2. Monitor with smart polling (10s, 30s, 60s intervals)
 3. Check logs periodically for progress
 4. Handle completion or failure
+5. Transfer work via git
 
-**Details:** Load `agent-interaction.md` steering file for delegation patterns
+**Details:** Load `agent-interaction.md` steering file for delegation patterns and prompt templates
 
 ### Pattern: Complete and Merge
 
-**Goal:** Merge completed work back to home workspace
+**Goal:** Merge completed work back to home workspace efficiently
 
 **Steps:**
 1. Commit and push from task workspace
 2. Fetch and merge in home workspace (use --no-ff)
 3. Verify merge succeeded
-4. Clean up feature branch (optional)
-5. Stop task workspace
+4. Stop task workspace immediately
+5. Clean up feature branch (optional)
 
-**Details:** Load `task-workflow.md` steering file for complete merge workflow
+**Details:** Load `task-workflow.md` steering file for complete merge workflow with automatic cleanup
+
+### Pattern: Parallel Task Execution
+
+**Goal:** Run multiple independent tasks simultaneously
+
+**Steps:**
+1. Create feature branches for each task
+2. Create all tasks in parallel
+3. Monitor all tasks until complete
+4. Transfer work from each task via git
+5. Stop all workspaces
+
+**Details:** Load `task-workflow.md` steering file for parallel coordination patterns
 
 ### Pattern: Run Commands and Edit Files
 
@@ -455,14 +471,16 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 - **Only use task-ready templates** that define a `coder_ai_task` resource
 - Wait for task workspace to reach "running" status before operations
 - Monitor task status with `coder_get_task_status`
-- Always stop workspaces after completion to free resources
+- **Include validation requirements in all task prompts**
+- Always stop workspaces immediately after work transfer to free resources
 
 ### Work Sharing (Critical)
 - **Home workspace is the source of truth** - contains main git repository
-- **Task workspaces use git worktrees** - each on a feature branch
-- **Share via git operations** - commit, push, merge (no file copying)
+- **Task workspaces work on feature branches** - each task gets its own branch
+- **Share via git operations** - commit, push, fetch, merge (no file copying)
 - Use `--no-ff` flag when merging to preserve history
 - Always commit and push from task workspace before merging
+- **Stop workspace immediately after successful work transfer**
 - See `WORK-TRANSFER-PATTERN.md` for complete implementation
 
 ### Workspace Operations
@@ -472,39 +490,87 @@ Session tokens (`CODER_SESSION_TOKEN`) are preferred over personal API tokens be
 
 ### Agent Collaboration
 - Use `coder_send_task_input` to delegate work to workspace agents
+- **Include comprehensive prompts with validation checklists**
 - Monitor progress with `coder_get_task_logs`
 - Four patterns: Orchestrator, Delegator, Hybrid, Iterative
-- See `steering/agent-interaction.md` for detailed patterns
+- See `steering/agent-interaction.md` for detailed patterns and prompt templates
+
+### Workspace Lifecycle
+- **Stop workspaces immediately** after work is transferred
+- Delete workspaces after work is merged and no longer needed
+- Don't leave workspaces running unnecessarily - they consume resources
+- Use automatic cleanup functions for reliable lifecycle management
 
 ## Work Sharing Pattern
 
-**Git worktrees provide the optimal workflow for sharing work between home and task workspaces.**
+**Git operations provide the optimal workflow for sharing work between home and task workspaces.**
 
 ### Architecture
 
 - **Home workspace** contains the main git repository (cloned via `coder_git_clone`)
-- **Task workspaces** use git worktrees pointing to feature branches
-- Work is shared via standard git operations (commit, push, merge)
+- **Task workspaces** work on feature branches
+- Work is shared via standard git operations (commit, push, fetch, merge)
 - No manual file copying needed
 
 ### Workflow
 
 1. **Create feature branch** in home workspace
-2. **Create task** with feature branch parameter
-3. **Task workspace** initializes git worktree automatically
-4. **Task commits** directly to feature branch
-5. **Home workspace merges** feature branch when complete
-6. **Clean up** and stop task workspace
+2. **Push branch to remote** so task workspace can access it
+3. **Create task** with feature branch parameter
+4. **Task workspace** works on the feature branch
+5. **Task commits and pushes** directly to feature branch
+6. **Home workspace fetches and merges** feature branch when complete
+7. **Stop workspace immediately** to free resources
+8. **Clean up** feature branch (optional)
 
 ### Benefits
 
-- ✅ **Efficient** - No file copying, minimal tokens
+- ✅ **Efficient** - No file copying, minimal tokens (90% faster than manual transfer)
 - ✅ **Standard** - Uses familiar git workflows
 - ✅ **Atomic** - Each task works on isolated branch
 - ✅ **Auditable** - Complete git history preserved
 - ✅ **Scalable** - Multiple tasks can work simultaneously
+- ✅ **Reliable** - Standard git operations, well-tested
+
+### Complete Example
+
+```python
+# 1. Create feature branch in home workspace
+feature_branch = "feature/user-auth"
+coder_workspace_bash(
+    workspace=home_workspace,
+    command=f"""
+        cd /workspaces/project
+        git checkout -b {feature_branch}
+        git push -u origin {feature_branch}
+    """,
+    timeout_ms=30000
+)
+
+# 2. Create task
+task = coder_create_task(
+    input=f"Implement user authentication. Work on branch {feature_branch}.",
+    template_version_id=template_id,
+    rich_parameter_values={
+        "feature_branch": feature_branch,
+        "home_workspace": home_workspace
+    }
+)
+
+# 3. Wait for task completion
+# ... (monitor task status)
+
+# 4. Transfer work via git
+complete_task_with_cleanup(
+    task_workspace=f"{owner}/{task.id}",
+    home_workspace=home_workspace,
+    feature_branch=feature_branch,
+    task_description="Implement user authentication"
+)
+```
 
 **See `WORK-TRANSFER-PATTERN.md` for complete implementation with code examples.**
+**See `steering/task-workflow.md` for the `complete_task_with_cleanup` function.**
 
 ## Troubleshooting
 

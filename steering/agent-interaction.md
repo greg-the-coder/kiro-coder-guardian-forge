@@ -371,6 +371,268 @@ while True:
 
 ---
 
+## Comprehensive Task Prompt Templates
+
+Use these templates for all task creation to ensure consistent, high-quality results with proper validation.
+
+### Template Function
+
+```python
+def generate_task_prompt(
+    task_description: str,
+    feature_branch: str,
+    home_workspace: str,
+    repo_path: str,
+    validation_requirements: list = None,
+    additional_context: str = ""
+) -> str:
+    """Generate comprehensive task prompt with all necessary context"""
+    
+    validation_section = ""
+    if validation_requirements:
+        validation_section = f"""
+VALIDATION REQUIREMENTS (MUST COMPLETE BEFORE FINISHING):
+
+{chr(10).join(f"{i+1}. {req}" for i, req in enumerate(validation_requirements))}
+
+CRITICAL: If any validation fails, fix the issue before completing the task.
+Document any issues found and how they were resolved.
+"""
+    
+    prompt = f"""
+{task_description}
+
+GIT WORKFLOW:
+- You are working on feature branch: {feature_branch}
+- This branch has been created and pushed to remote
+- Commit your work frequently with descriptive messages
+- When complete, ensure all work is committed and pushed:
+  ```bash
+  git add .
+  git commit -m "Complete: {task_description}"
+  git push origin {feature_branch}
+  ```
+
+{validation_section}
+
+COMPLETION CHECKLIST:
+- [ ] All code changes committed
+- [ ] All tests passing
+- [ ] Build succeeds
+- [ ] Changes pushed to {feature_branch}
+- [ ] Documentation updated (if needed)
+
+{additional_context}
+
+When you have completed all work and validations, set your state to 'idle' or 'completed'.
+"""
+    
+    return prompt
+```
+
+### Example Usage: Backend API Task
+
+```python
+prompt = generate_task_prompt(
+    task_description="Implement user authentication API with JWT tokens",
+    feature_branch="feature/auth-api",
+    home_workspace="alice/main-workspace",
+    repo_path="/workspaces/my-project",
+    validation_requirements=[
+        "Run full test suite: `npm test` - all tests must pass",
+        "Run type checker: `npm run type-check` - zero TypeScript errors",
+        "Test authentication flow: login, token refresh, logout",
+        "Verify JWT tokens are properly signed and validated",
+        "Check error handling for invalid credentials"
+    ],
+    additional_context="""
+CONTEXT:
+- Use jsonwebtoken library for JWT handling
+- Store user credentials in PostgreSQL database
+- API endpoints should be in src/api/auth.ts
+- Follow existing error handling patterns in src/api/errors.ts
+- Token expiry: 1 hour for access tokens, 7 days for refresh tokens
+"""
+)
+
+task = coder_create_task(
+    input=prompt,
+    template_version_id=template_id,
+    rich_parameter_values={
+        "feature_branch": "feature/auth-api",
+        "home_workspace": "alice/main-workspace"
+    }
+)
+```
+
+### Example Usage: Frontend Component Task
+
+```python
+prompt = generate_task_prompt(
+    task_description="Create responsive dashboard with real-time metrics",
+    feature_branch="feature/dashboard-ui",
+    home_workspace="bob/main-workspace",
+    repo_path="/workspaces/frontend-app",
+    validation_requirements=[
+        "Run build: `npm run build` - must succeed with zero errors",
+        "Run linter: `npm run lint` - fix all linting errors",
+        "Test responsive design: verify mobile, tablet, desktop layouts",
+        "Check accessibility: run `npm run a11y-check`",
+        "Verify all metrics update in real-time (WebSocket connection)"
+    ],
+    additional_context="""
+CONTEXT:
+- Use React with TypeScript
+- Component location: src/components/Dashboard/
+- Use existing design system from src/components/ui/
+- WebSocket connection already set up in src/services/websocket.ts
+- Follow accessibility guidelines (WCAG 2.1 AA)
+- Metrics to display: CPU usage, memory, active users, request rate
+"""
+)
+```
+
+### Example Usage: Infrastructure Task
+
+```python
+prompt = generate_task_prompt(
+    task_description="Integrate React build into CDK deployment pipeline",
+    feature_branch="feature/cdk-integration",
+    home_workspace="charlie/main-workspace",
+    repo_path="/workspaces/mvp-ai-demo",
+    validation_requirements=[
+        "Run full build: `npm run build` - must succeed with zero errors",
+        "Test CDK synth: `npx cdk synth -c envName=dev -c siteAssetsPath=../dist`",
+        "Verify dist/ directory contains built assets",
+        "Check vite.config.ts imports from correct package (vitest/config not vite)",
+        "Run type checker: `npm run type-check` - must pass",
+        "Test deployment to dev environment: `npx cdk deploy -c envName=dev`"
+    ],
+    additional_context="""
+CONTEXT:
+- React app is in /workspaces/mvp-ai-demo/frontend
+- CDK infrastructure is in /workspaces/mvp-ai-demo/infrastructure
+- Build output should go to frontend/dist
+- CDK needs to reference ../dist for site assets
+- Use S3 bucket for static hosting
+- CloudFront distribution for CDN
+"""
+)
+```
+
+### Validation Script Template
+
+Create reusable validation scripts for common project types:
+
+```bash
+#!/bin/bash
+# validation.sh - Run before task completion
+
+set -e
+
+echo "🔍 Running pre-completion validation..."
+
+# Build validation
+echo "1. Build validation..."
+npm run build
+echo "✅ Build succeeded"
+
+# Type checking
+echo "2. Type checking..."
+npm run type-check || tsc --noEmit
+echo "✅ Type checking passed"
+
+# Tests
+echo "3. Running tests..."
+npm test
+echo "✅ Tests passed"
+
+# Linting
+echo "4. Linting..."
+npm run lint
+echo "✅ Linting passed"
+
+# Optional: Integration tests
+if [ -f "package.json" ] && grep -q "test:integration" package.json; then
+    echo "5. Integration tests..."
+    npm run test:integration
+    echo "✅ Integration tests passed"
+fi
+
+echo "✅ All validations passed - ready to complete task"
+```
+
+**Include validation script in task workspace:**
+
+```python
+# Write validation script to task workspace
+validation_script = """#!/bin/bash
+set -e
+echo "🔍 Running pre-completion validation..."
+npm run build
+npm run type-check || tsc --noEmit
+npm test
+npm run lint
+echo "✅ All validations passed"
+"""
+
+coder_workspace_write_file(
+    workspace=task_workspace,
+    path="/home/coder/validation.sh",
+    content=base64.b64encode(validation_script.encode()).decode()
+)
+
+# Make executable
+coder_workspace_bash(
+    workspace=task_workspace,
+    command="chmod +x /home/coder/validation.sh",
+    timeout_ms=5000
+)
+
+# Include in task prompt
+prompt += """
+
+VALIDATION SCRIPT:
+A validation script is available at /home/coder/validation.sh
+Run it before completing: `bash /home/coder/validation.sh`
+"""
+```
+
+### Template for Different Project Types
+
+**Python Project:**
+```python
+validation_requirements=[
+    "Run tests: `pytest` - all tests must pass",
+    "Run type checker: `mypy .` - zero type errors",
+    "Run linter: `ruff check .` - fix all issues",
+    "Check code formatting: `black --check .`",
+    "Verify requirements.txt is updated"
+]
+```
+
+**Go Project:**
+```python
+validation_requirements=[
+    "Run tests: `go test ./...` - all tests must pass",
+    "Run linter: `golangci-lint run` - fix all issues",
+    "Check formatting: `gofmt -l .` - should return nothing",
+    "Build binary: `go build` - must succeed",
+    "Verify go.mod and go.sum are updated"
+]
+```
+
+**Rust Project:**
+```python
+validation_requirements=[
+    "Run tests: `cargo test` - all tests must pass",
+    "Run clippy: `cargo clippy` - fix all warnings",
+    "Check formatting: `cargo fmt --check`",
+    "Build release: `cargo build --release` - must succeed",
+    "Verify Cargo.toml dependencies are correct"
+]
+```
+
 ## Best Practices Summary
 
 **When to use workspace agents:**
@@ -393,12 +655,15 @@ while True:
 - Monitor progress regularly
 - Give feedback when results aren't right
 - Always check logs after sending prompts
+- **Include validation requirements in every prompt**
+- **Specify git workflow expectations clearly**
 
 **Resource management:**
 - Don't leave workspaces running unnecessarily
 - Stop workspaces after work completes or fails
 - Monitor task state to know when work is done
 - Use timeouts to avoid infinite waiting
+- **Stop workspaces immediately after work transfer**
 
 ---
 
