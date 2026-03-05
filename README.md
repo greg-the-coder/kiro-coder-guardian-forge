@@ -278,4 +278,4 @@ See [LICENSE](LICENSE) file for details.
 ---
 
 **Kiro Coder Guardian Forge** - Governed, auditable AI agent workspaces  
-**Version:** 3.3.0 | **Released:** March 5, 2026 | **Status:** Production Ready
+**Version:** 3.4.0 | **Released:** March 5, 2026 | **Status:** Production Ready
