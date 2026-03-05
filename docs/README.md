@@ -8,6 +8,18 @@ This directory contains reference documentation and implementation guides for th
 
 ### Implementation Guides
 
+- **[ANALYSIS-WORKFLOWS.md](ANALYSIS-WORKFLOWS.md)** - Post-task analysis reference (v3.3)
+  - Complete analysis workflow documentation
+  - Validation patterns and quality gates
+  - Integration guide with existing workflows
+  - Performance metrics and best practices
+
+- **[V3.3-QUICK-START.md](V3.3-QUICK-START.md)** - v3.3 quick start guide
+  - Get started with post-task analysis in 5 minutes
+  - Copy-paste ready code examples
+  - Project-specific validation patterns
+  - Common workflow patterns
+
 - **[WORK-TRANSFER-PATTERN.md](WORK-TRANSFER-PATTERN.md)** - Git-based work transfer pattern
   - How work is transferred between task and home workspaces
   - `complete_task_with_cleanup()` function documentation
@@ -59,6 +71,8 @@ See [archive/README.md](archive/README.md) for complete archive index.
 - [steering/task-workflow.md](../steering/task-workflow.md) - Task creation and monitoring
 - [steering/agent-interaction.md](../steering/agent-interaction.md) - Workspace agent collaboration
 - [steering/workspace-ops.md](../steering/workspace-ops.md) - Workspace operations
+- [steering/post-task-analysis.md](../steering/post-task-analysis.md) - Post-task analysis workflows (v3.3)
+- [steering/validation-patterns.md](../steering/validation-patterns.md) - Validation checklists and quality gates (v3.3)
 
 ### Configuration
 - [coder-template-example.tf](../coder-template-example.tf) - Complete template example
@@ -71,6 +85,8 @@ See [archive/README.md](archive/README.md) for complete archive index.
 ```
 docs/
 ├── README.md                      # This file
+├── ANALYSIS-WORKFLOWS.md          # Post-task analysis reference (v3.3)
+├── V3.3-QUICK-START.md            # v3.3 quick start guide
 ├── WORK-TRANSFER-PATTERN.md       # Work transfer guide
 ├── TASK-READY-TEMPLATES.md        # Template requirements
 ├── QUICK-REFERENCE-V3.2.md        # Quick examples
@@ -96,5 +112,5 @@ Keep the root directory clean with only essential, current documentation.
 
 ---
 
-**Version:** 3.2.0  
-**Last Updated:** March 3, 2026
+**Version:** 3.3.0  
+**Last Updated:** March 5, 2026
