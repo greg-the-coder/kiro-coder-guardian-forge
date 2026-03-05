@@ -1,9 +1,9 @@
 # Kiro Coder Guardian Forge — Quick Start Guide
 
-Get up and running with Kiro Coder Guardian Forge in 5 minutes.
+Get up and running with Kiro Coder Guardian Forge in 10 minutes (5 minutes one-time setup + 5 minutes first task).
 
-**Version:** 3.2.0  
-**Last Updated:** March 3, 2026
+**Version:** 3.4.0  
+**Last Updated:** March 5, 2026
 
 ---
 
@@ -11,11 +11,29 @@ Get up and running with Kiro Coder Guardian Forge in 5 minutes.
 
 1. **Coder deployment** with `mcp-server-http` experiment enabled
 2. **Coder workspace** with MCP configuration (template-based setup)
-3. **SSH authentication** configured for git operations
+3. **One-time setup completed** - SSH authentication configured (see below)
 
 ---
 
-## Setup (2 Options)
+## One-Time Setup (5 minutes)
+
+**Before creating your first task, complete the one-time SSH setup:**
+
+📖 **See ONE-TIME-SETUP.md for detailed step-by-step instructions**
+
+**Quick summary:**
+1. Get your SSH public key: `cat ~/.ssh/id_ed25519.pub`
+2. Add to GitHub: https://github.com/settings/keys
+3. Test: `ssh -T git@github.com`
+4. Verify git remote uses SSH format
+
+**Why this is required:** Task workspaces need to push code to git. This one-time setup authorizes your Coder workspaces to push to your repositories.
+
+**After completing this once, all future workspaces work automatically!**
+
+---
+
+## MCP Setup (2 Options)
 
 ### Option A: Template-Based Setup (Recommended)
 
@@ -40,42 +58,6 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 ```
 
 The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and session token.
-
----
-
-## SSH Authentication Setup (CRITICAL)
-
-**Required for git push operations in task workspaces.**
-
-### Quick Setup (5 minutes)
-
-```bash
-# 1. Generate SSH key (if not exists)
-ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
-
-# 2. Display public key
-cat ~/.ssh/id_ed25519.pub
-
-# 3. Add to GitHub: https://github.com/settings/keys
-# 4. Add to GitLab: https://gitlab.com/-/profile/keys
-
-# 5. Test authentication
-ssh -T git@github.com
-# Expected: "Hi username! You've successfully authenticated..."
-```
-
-### Verify Git Remote Uses SSH
-
-```bash
-cd /workspaces/your-project
-git remote -v
-
-# Should show: git@github.com:user/repo.git
-# If shows https://, convert to SSH:
-git remote set-url origin git@github.com:user/repo.git
-```
-
-**Without SSH authentication, tasks will complete work but fail to push changes.**
 
 ---
 
