@@ -1,5 +1,12 @@
 # Example Coder Workspace Template with Kiro MCP Auto-Configuration and AI Task Support
 # This template supports both home workspaces and task workspaces with git worktrees
+#
+# IMPORTANT: This template assumes Coder's git SSH wrapper is configured.
+# The GIT_SSH_COMMAND environment variable should be automatically set by Coder to:
+# /tmp/coder.*/coder gitssh --
+#
+# This wrapper handles SSH authentication through Coder's infrastructure and is
+# essential for all git operations (clone, push, pull, fetch).
 
 terraform {
   required_providers {
@@ -74,6 +81,19 @@ resource "coder_agent" "dev" {
   startup_script = <<-EOT
     #!/bin/bash
     set -e
+    
+    # ============================================
+    # Git SSH Wrapper Verification
+    # ============================================
+    
+    # Verify Coder's git SSH wrapper is configured
+    # This is automatically set by Coder and is essential for git operations
+    if [ -z "$GIT_SSH_COMMAND" ]; then
+      echo "⚠️  WARNING: GIT_SSH_COMMAND not set"
+      echo "Git operations may fail without Coder's SSH wrapper"
+    else
+      echo "✅ Git SSH wrapper configured: $GIT_SSH_COMMAND"
+    fi
     
     # ============================================
     # Kiro Coder Guardian Forge MCP Configuration

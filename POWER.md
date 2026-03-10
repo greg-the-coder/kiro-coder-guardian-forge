@@ -227,10 +227,16 @@ The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and ses
 
 **IMPORTANT:** SSH authentication is required for git push operations in task workspaces. Without proper SSH configuration, tasks will complete work but fail to push changes.
 
+**Coder Git SSH Wrapper:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable (e.g., `/tmp/coder.*/coder gitssh --`). The wrapper is essential for all git operations and is automatically set up by your Coder workspace template.
+
 **Complete setup instructions:** See ONE-TIME-SETUP.md for detailed step-by-step guide.
 
 **Quick verification:**
 ```bash
+# Verify git SSH wrapper is configured
+echo $GIT_SSH_COMMAND
+# Expected: /tmp/coder.*/coder gitssh --
+
 # Test GitHub authentication
 ssh -T git@github.com
 # Expected: "Hi username! You've successfully authenticated..."
@@ -681,6 +687,28 @@ complete_task_with_cleanup(
 1. Verify format: `owner/workspace-name`
 2. Get name from `coder_get_task_logs` after creation
 3. Check workspace exists: `coder_list_workspaces`
+
+**Problem:** Git push fails in task workspace with "Permission denied (publickey)"
+
+**Cause:** SSH authentication not configured or git SSH wrapper not working
+
+**Solutions:**
+1. Verify SSH key added to GitHub: `ssh -T git@github.com`
+2. Check git SSH wrapper is configured: `echo $GIT_SSH_COMMAND`
+3. Expected: `/tmp/coder.*/coder gitssh --`
+4. Test wrapper directly: `$GIT_SSH_COMMAND -T git@github.com`
+5. If wrapper missing, restart workspace or contact Coder administrator
+6. See ONE-TIME-SETUP.md for complete SSH setup guide
+
+**Problem:** Git operations work in home workspace but fail in task workspace
+
+**Cause:** Task workspace may not have inherited `GIT_SSH_COMMAND` environment variable
+
+**Solutions:**
+1. Verify in task workspace: `coder_workspace_bash(command="echo $GIT_SSH_COMMAND")`
+2. If empty, check Coder template ensures environment variables are inherited
+3. Contact Coder administrator to update template configuration
+4. Temporary workaround: Manually set in task workspace startup script
 
 ### Quick Health Check
 

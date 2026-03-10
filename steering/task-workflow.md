@@ -58,6 +58,32 @@ SSH key setup required:
 2. Display key: cat ~/.ssh/id_ed25519.pub
 3. Add to GitHub: https://github.com/settings/keys
 4. Test: ssh -T git@github.com
+
+See ONE-TIME-SETUP.md for detailed instructions.
+        """)
+        return (False, issues, fixes)
+    
+    # Check 3a: Verify Coder git SSH wrapper is configured (CRITICAL)
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command="echo $GIT_SSH_COMMAND",
+        timeout_ms=5000
+    )
+    if not result.stdout.strip() or "coder gitssh" not in result.stdout:
+        issues.append("Coder git SSH wrapper not configured")
+        fixes.append("""
+GIT_SSH_COMMAND environment variable must be set to Coder's git SSH wrapper.
+
+Expected: GIT_SSH_COMMAND=/tmp/coder.*/coder gitssh --
+
+This is automatically configured by Coder workspace templates. If missing:
+1. Check template configuration includes git SSH wrapper setup
+2. Restart workspace to reload environment variables
+3. Contact Coder administrator if issue persists
+
+Why this matters: Coder uses a custom SSH wrapper (coder gitssh) that handles
+SSH authentication through Coder's infrastructure. Without this, git operations
+will fail even if SSH keys are properly configured.
         """)
         return (False, issues, fixes)
     
@@ -332,6 +358,27 @@ cat ~/.ssh/id_ed25519.pub
 
 # Add to GitHub: https://github.com/settings/keys
 # Test again: ssh -T git@github.com
+```
+
+### 3a. Verify Coder Git SSH Wrapper (CRITICAL)
+
+```bash
+# Check GIT_SSH_COMMAND environment variable
+echo $GIT_SSH_COMMAND
+```
+
+**Expected:** `/tmp/coder.*/coder gitssh --` (path will vary)  
+**Why this matters:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable and is essential for all git operations.
+
+**If empty or incorrect:**
+```bash
+# Verify the wrapper exists
+ls -la /tmp/coder.*/coder
+
+# Test the wrapper directly
+$GIT_SSH_COMMAND -T git@github.com
+
+# If missing, restart workspace or contact Coder administrator
 ```
 
 ### 4. Verify Git Remote Uses SSH
