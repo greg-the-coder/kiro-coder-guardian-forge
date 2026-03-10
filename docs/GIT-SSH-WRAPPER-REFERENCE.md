@@ -2,7 +2,9 @@
 
 ## What is it?
 
-Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure. This wrapper is essential for all git operations (clone, push, pull, fetch).
+Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure using Coder-managed SSH keys. This wrapper is essential for all git operations (clone, push, pull, fetch).
+
+**Key Point:** Users do NOT need to generate, manage, or add SSH keys to GitHub/GitLab. Coder manages all SSH keys centrally and the wrapper handles authentication automatically.
 
 ## How it works
 

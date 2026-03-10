@@ -44,26 +44,7 @@ def validate_task_prerequisites(home_workspace, repo_path):
         fixes.append(f"Clone repository: git clone <repo-url> {repo_path}")
         return (False, issues, fixes)
     
-    # Check 3: Verify SSH authentication (CRITICAL)
-    result = coder_workspace_bash(
-        workspace=home_workspace,
-        command="ssh -T git@github.com 2>&1",
-        timeout_ms=10000
-    )
-    if "successfully authenticated" not in result.stdout.lower():
-        issues.append("SSH authentication to GitHub not configured")
-        fixes.append("""
-SSH key setup required:
-1. Generate key: ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
-2. Display key: cat ~/.ssh/id_ed25519.pub
-3. Add to GitHub: https://github.com/settings/keys
-4. Test: ssh -T git@github.com
-
-See ONE-TIME-SETUP.md for detailed instructions.
-        """)
-        return (False, issues, fixes)
-    
-    # Check 3a: Verify Coder git SSH wrapper is configured (CRITICAL)
+    # Check 3: Verify Coder git SSH wrapper is configured (CRITICAL)
     result = coder_workspace_bash(
         workspace=home_workspace,
         command="echo $GIT_SSH_COMMAND",
@@ -77,13 +58,35 @@ GIT_SSH_COMMAND environment variable must be set to Coder's git SSH wrapper.
 Expected: GIT_SSH_COMMAND=/tmp/coder.*/coder gitssh --
 
 This is automatically configured by Coder workspace templates. If missing:
-1. Check template configuration includes git SSH wrapper setup
-2. Restart workspace to reload environment variables
-3. Contact Coder administrator if issue persists
+1. Restart workspace to reload environment variables
+2. Check Coder agent logs for initialization errors
+3. Contact Coder administrator to verify template configuration
 
 Why this matters: Coder uses a custom SSH wrapper (coder gitssh) that handles
-SSH authentication through Coder's infrastructure. Without this, git operations
-will fail even if SSH keys are properly configured.
+SSH authentication through Coder's infrastructure using Coder-managed SSH keys.
+Without this, git operations will fail.
+        """)
+        return (False, issues, fixes)
+    
+    # Check 3a: Verify git authentication works (CRITICAL)
+    result = coder_workspace_bash(
+        workspace=home_workspace,
+        command="git ls-remote git@github.com:coder/coder.git HEAD 2>&1",
+        timeout_ms=10000
+    )
+    if result.exit_code != 0:
+        issues.append("Git authentication not working")
+        fixes.append("""
+Git operations are failing even though GIT_SSH_COMMAND is set.
+
+Troubleshooting steps:
+1. Test wrapper directly: $GIT_SSH_COMMAND -T git@github.com
+2. Check wrapper binary exists: ls -la $(echo $GIT_SSH_COMMAND | awk '{print $1}')
+3. Verify network connectivity: ping github.com
+4. Check Coder agent logs for authentication errors
+5. Contact Coder administrator if issue persists
+
+Note: Coder manages SSH keys centrally - no user SSH key setup required.
         """)
         return (False, issues, fixes)
     
@@ -340,27 +343,7 @@ cd /workspaces/my-project && git status
 **Expected:** Should show git status, not "not a git repository"  
 **If fails:** Clone repository or initialize git
 
-### 3. Verify SSH Authentication (CRITICAL)
-
-```bash
-# Test SSH connection to GitHub
-ssh -T git@github.com
-```
-
-**Expected:** "Hi username! You've successfully authenticated"  
-**If fails:**
-```bash
-# Generate SSH key
-ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
-
-# Display public key
-cat ~/.ssh/id_ed25519.pub
-
-# Add to GitHub: https://github.com/settings/keys
-# Test again: ssh -T git@github.com
-```
-
-### 3a. Verify Coder Git SSH Wrapper (CRITICAL)
+### 3. Verify Coder Git SSH Wrapper (CRITICAL)
 
 ```bash
 # Check GIT_SSH_COMMAND environment variable
@@ -368,18 +351,37 @@ echo $GIT_SSH_COMMAND
 ```
 
 **Expected:** `/tmp/coder.*/coder gitssh --` (path will vary)  
-**Why this matters:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable and is essential for all git operations.
+**Why this matters:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure using Coder-managed SSH keys. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable and is essential for all git operations.
 
 **If empty or incorrect:**
 ```bash
 # Verify the wrapper exists
 ls -la /tmp/coder.*/coder
 
-# Test the wrapper directly
-$GIT_SSH_COMMAND -T git@github.com
-
 # If missing, restart workspace or contact Coder administrator
 ```
+
+### 3a. Verify Git Authentication Works (CRITICAL)
+
+```bash
+# Test git operations
+git ls-remote git@github.com:coder/coder.git HEAD
+```
+
+**Expected:** Commit hash and HEAD reference  
+**If fails:**
+```bash
+# Test wrapper directly
+$GIT_SSH_COMMAND -T git@github.com
+
+# Check network connectivity
+ping github.com
+
+# Check Coder agent logs for errors
+# Contact Coder administrator if issue persists
+```
+
+**Note:** No SSH key generation or GitHub/GitLab key management required - Coder handles all authentication automatically through the git SSH wrapper.
 
 ### 4. Verify Git Remote Uses SSH
 

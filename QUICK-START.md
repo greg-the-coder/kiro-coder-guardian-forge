@@ -1,9 +1,9 @@
 # Kiro Coder Guardian Forge — Quick Start Guide
 
-Get up and running with Kiro Coder Guardian Forge in 10 minutes (5 minutes one-time setup + 5 minutes first task).
+Get up and running with Kiro Coder Guardian Forge in 7 minutes (2 minutes verification + 5 minutes first task).
 
 **Version:** 3.4.0  
-**Last Updated:** March 5, 2026
+**Last Updated:** March 10, 2026
 
 ---
 
@@ -11,25 +11,30 @@ Get up and running with Kiro Coder Guardian Forge in 10 minutes (5 minutes one-t
 
 1. **Coder deployment** with `mcp-server-http` experiment enabled
 2. **Coder workspace** with MCP configuration (template-based setup)
-3. **One-time setup completed** - SSH authentication configured (see below)
+3. **Git SSH wrapper configured** - Automatically set up by Coder (verify with `echo $GIT_SSH_COMMAND`)
 
 ---
 
-## One-Time Setup (5 minutes)
+## One-Time Setup (2 minutes)
 
-**Before creating your first task, complete the one-time SSH setup:**
+**Before creating your first task, verify git authentication is working:**
 
-📖 **See ONE-TIME-SETUP.md for detailed step-by-step instructions**
+📖 **See ONE-TIME-SETUP.md for detailed verification steps**
 
-**Quick summary:**
-1. Get your SSH public key: `cat ~/.ssh/id_ed25519.pub`
-2. Add to GitHub: https://github.com/settings/keys
-3. Test: `ssh -T git@github.com`
-4. Verify git remote uses SSH format
+**Quick verification:**
+```bash
+# Verify Coder git SSH wrapper is configured
+echo $GIT_SSH_COMMAND
+# Expected: /tmp/coder.*/coder gitssh --
 
-**Why this is required:** Task workspaces need to push code to git. This one-time setup authorizes your Coder workspaces to push to your repositories.
+# Test git operations
+git ls-remote git@github.com:coder/coder.git HEAD
+# Expected: <commit-hash>  HEAD
+```
 
-**After completing this once, all future workspaces work automatically!**
+**Why this matters:** Task workspaces need to push code to git. Coder handles all authentication automatically through its git SSH wrapper - no SSH key generation or GitHub/GitLab key management required!
+
+**If verification succeeds, you're ready to create tasks!**
 
 ---
 
@@ -221,17 +226,23 @@ bash ~/.kiro/powers/installed/kiro-coder-guardian-forge/setup.sh
 
 ### "Permission denied (publickey)"
 
-**SSH authentication not configured:**
+**Git SSH wrapper not configured or not working:**
 ```bash
-# Generate SSH key
-ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
+# Verify git SSH wrapper is configured
+echo $GIT_SSH_COMMAND
+# Expected: /tmp/coder.*/coder gitssh --
 
-# Display public key
-cat ~/.ssh/id_ed25519.pub
+# Test wrapper
+$GIT_SSH_COMMAND -T git@github.com
+# Expected: "Hi username! You've successfully authenticated..."
 
-# Add to GitHub: https://github.com/settings/keys
-# Test: ssh -T git@github.com
+# Check wrapper binary exists
+ls -la /tmp/coder.*/coder
+
+# If wrapper missing, restart workspace or contact Coder administrator
 ```
+
+**Note:** Coder manages SSH keys centrally - no user SSH key setup required.
 
 ### "No task-ready templates found"
 

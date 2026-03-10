@@ -172,20 +172,25 @@ Call action "readSteering" with powerName="kiro-coder-guardian-forge", steeringF
 
 ### Installation
 
-**Step 1: Complete One-Time Setup (5 minutes)**
+**Step 1: Verify Git SSH Wrapper (2 minutes)**
 
-Before creating your first task, complete the one-time SSH setup:
+Coder automatically configures git authentication through its git SSH wrapper. Verify it's working:
 
+```bash
+# Check wrapper is configured
+echo $GIT_SSH_COMMAND
+# Expected: /tmp/coder.*/coder gitssh --
+
+# Test git operations
+git ls-remote git@github.com:coder/coder.git HEAD
+# Expected: <commit-hash>  HEAD
 ```
-See ONE-TIME-SETUP.md for detailed instructions
-```
 
-**Quick summary:**
-1. Get your SSH public key: `cat ~/.ssh/id_ed25519.pub`
-2. Add to GitHub: https://github.com/settings/keys
-3. Test: `ssh -T git@github.com`
+**If verification succeeds:** You're ready to use the power!
 
-**Why this is required:** Task workspaces need to push code to git. This one-time setup authorizes your Coder workspaces to push to your repositories.
+**If verification fails:** See ONE-TIME-SETUP.md for troubleshooting steps.
+
+**Important:** No SSH key generation or GitHub/GitLab key management required - Coder handles all authentication automatically through the git SSH wrapper.
 
 **Step 2: Verify Template Configuration**
 
@@ -225,11 +230,9 @@ The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and ses
 
 ### SSH Authentication Setup
 
-**IMPORTANT:** SSH authentication is required for git push operations in task workspaces. Without proper SSH configuration, tasks will complete work but fail to push changes.
+**IMPORTANT:** Git authentication is handled automatically by Coder's git SSH wrapper. No manual SSH key setup required!
 
-**Coder Git SSH Wrapper:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable (e.g., `/tmp/coder.*/coder gitssh --`). The wrapper is essential for all git operations and is automatically set up by your Coder workspace template.
-
-**Complete setup instructions:** See ONE-TIME-SETUP.md for detailed step-by-step guide.
+**Coder Git SSH Wrapper:** Coder workspaces use a custom git SSH wrapper (`coder gitssh`) that handles SSH authentication through Coder's infrastructure using Coder-managed SSH keys. This wrapper is automatically configured via the `GIT_SSH_COMMAND` environment variable (e.g., `/tmp/coder.*/coder gitssh --`). The wrapper is essential for all git operations and is automatically set up by your Coder workspace template.
 
 **Quick verification:**
 ```bash
@@ -237,9 +240,9 @@ The setup script creates `~/.kiro/settings/mcp.json` with your Coder URL and ses
 echo $GIT_SSH_COMMAND
 # Expected: /tmp/coder.*/coder gitssh --
 
-# Test GitHub authentication
-ssh -T git@github.com
-# Expected: "Hi username! You've successfully authenticated..."
+# Test git authentication
+git ls-remote git@github.com:coder/coder.git HEAD
+# Expected: <commit-hash>  HEAD
 
 # Verify git remote uses SSH
 cd /workspaces/your-project
@@ -247,7 +250,7 @@ git remote -v
 # Expected: git@github.com:user/repo.git
 ```
 
-**If authentication fails:** Follow the complete setup guide in ONE-TIME-SETUP.md (takes 5 minutes, one-time only).
+**If verification fails:** See ONE-TIME-SETUP.md for troubleshooting steps (takes 2 minutes).
 
 ## Configuration
 
@@ -690,15 +693,17 @@ complete_task_with_cleanup(
 
 **Problem:** Git push fails in task workspace with "Permission denied (publickey)"
 
-**Cause:** SSH authentication not configured or git SSH wrapper not working
+**Cause:** Git SSH wrapper not configured or not working
 
 **Solutions:**
-1. Verify SSH key added to GitHub: `ssh -T git@github.com`
-2. Check git SSH wrapper is configured: `echo $GIT_SSH_COMMAND`
-3. Expected: `/tmp/coder.*/coder gitssh --`
-4. Test wrapper directly: `$GIT_SSH_COMMAND -T git@github.com`
+1. Verify git SSH wrapper: `echo $GIT_SSH_COMMAND`
+2. Expected: `/tmp/coder.*/coder gitssh --`
+3. Test wrapper: `$GIT_SSH_COMMAND -T git@github.com`
+4. Check wrapper binary exists: `ls -la /tmp/coder.*/coder`
 5. If wrapper missing, restart workspace or contact Coder administrator
-6. See ONE-TIME-SETUP.md for complete SSH setup guide
+6. See ONE-TIME-SETUP.md for complete troubleshooting guide
+
+**Note:** Coder manages SSH keys centrally - no user SSH key setup required.
 
 **Problem:** Git operations work in home workspace but fail in task workspace
 
