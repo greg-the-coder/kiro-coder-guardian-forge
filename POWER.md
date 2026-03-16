@@ -1,7 +1,7 @@
 ---
 name: "kiro-coder-guardian-forge"
 displayName: "Kiro Coder Guardian Forge"
-description: "Run Kiro agents in governed Coder workspaces. Creates Agent-Ready Workspaces as Coder Tasks — visible in the Coder Tasks UI — so all agent activity is tracked, auditable, and isolated inside your own infrastructure."
+description: "Run agents in governed Coder workspaces. Creates Agent-Ready Workspaces visible in the Coder UI — so all agent activity is tracked, auditable, and isolated inside your own infrastructure."
 keywords: ["coder", "workspace", "task", "agent", "guardian", "forge", "regulated", "secure workspace", "remote workspace", "cloud workspace"]
 author: "Coder"
 ---
@@ -10,19 +10,19 @@ author: "Coder"
 
 ## Overview
 
-Kiro Coder Guardian Forge connects Kiro agents to your Coder deployment, enabling agents to work inside governed, auditable workspaces. Every agent operation runs as a Coder Task — visible in the Coder Tasks UI — providing full lifecycle tracking, progress reporting, and infrastructure isolation.
+Kiro Coder Guardian Forge connects agents to your Coder deployment, enabling agents to work inside governed, auditable workspaces. Every agent operation runs in a Coder Workspace — visible in the Coder UI — providing full lifecycle tracking, progress reporting, and infrastructure isolation.
 
 This Power uses Coder's remote HTTP MCP server with no CLI installation required. The MCP configuration is automatically created by your Coder workspace template using session tokens for secure, zero-configuration setup.
 
 **What this power enables:**
-- Create Agent-Ready Workspaces as Coder Tasks with full UI visibility
+- Create Agent-Ready Workspaces with full UI visibility
 - Execute commands and manage files inside task workspaces
 - Collaborate with workspace agents (Claude Code, Cursor, etc.)
 - Transfer work from ephemeral task workspaces to permanent home workspace
-- Automatic progress reporting to Coder Tasks UI
+- Automatic progress reporting to Coder UI
 - All operations auditable and governed by Coder policies
 
-**Key pattern:** Task workspaces are ephemeral execution environments. Work is performed in task workspaces, then transferred back to your home workspace (where Kiro runs) for permanent storage.
+**Key pattern:** Coder workspaces are ephemeral execution environments. Work is performed in Coder workspaces, then transferred back to your home workspace (where Kiro runs) for permanent storage.
 
 **New in v3.3:** Post-task analysis and validation workflows that reduce analysis time by 77% (60 min → 14 min) and post-task bugs by 80%.
 
@@ -30,24 +30,24 @@ This Power uses Coder's remote HTTP MCP server with no CLI installation required
 
 ### Proactive Validation & Enhanced Onboarding
 
-**Problem Solved:** Task failures due to missing SSH authentication (33% failure rate) and unclear onboarding process.
+**Problem Solved:** Coder Workspace failures due to missing SSH authentication (33% failure rate) and unclear onboarding process.
 
-**Solution:** Proactive validation before task creation with clear setup guidance:
-- `validate_task_prerequisites()` function checks all requirements before task creation
+**Solution:** Proactive validation before workspace creation with clear setup guidance:
+- `validate_task_prerequisites()` function checks all requirements before workspace creation
 - ONE-TIME-SETUP.md provides step-by-step 5-minute setup guide
 - Pre-flight validation prevents task creation when prerequisites not met
 - Clear error messages with actionable fixes
 - Enhanced onboarding documentation
 
 **Results:**
-- Task failure rate: 33% → 0% (SSH issues eliminated)
+- Workspace failure rate: 33% → 0% (SSH issues eliminated)
 - Time to first success: 90 min → 10 min (89% reduction)
 - Manual interventions: 3-5 → 0-1 (80% reduction)
 - User onboarding time: 30 min → 5 min (83% reduction)
 
 ### Pre-Flight Validation
 
-**New capability:** Comprehensive validation before every task creation:
+**New capability:** Comprehensive validation before every workspace creation:
 - SSH authentication verification
 - Git repository validation
 - Git remote format checking
