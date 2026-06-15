@@ -1,6 +1,6 @@
 # Kiro Coder Guardian Forge
 
-**Version:** 3.4.0 | **Status:** Production Ready
+**Version:** 3.4.0 | **Status:** Pilot Ready - NEEDS UPDATE TO SUPPORT CODER AGENTS
 
 A Kiro Power that connects Kiro agents to Coder deployments, enabling agents to work inside governed, auditable workspaces. Every agent operation runs as a Coder Task with full lifecycle tracking and infrastructure isolation.
 
